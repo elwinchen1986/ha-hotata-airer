@@ -15,6 +15,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import httpx_client
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.storage import Store
 
 from .const import (
     API_INVOKE2,
@@ -26,9 +27,11 @@ from .const import (
     APP_SECRET,
     APP_VERSION,
     CONF_ACCESS_TOKEN,
+    CONF_DESCENT_TIME,
     CONF_IOT_ID,
     CONF_REFRESH_TOKEN,
     CONF_USER_ID,
+    DEFAULT_DESCENT_TIME,
     DEFAULT_NAME,
     IMEI,
     PHONE_MODEL,
@@ -52,6 +55,7 @@ class HotataState:
     disinfection_on: bool | None = None
     ions_on: bool | None = None
     position: int | None = None
+    simulated_position: int = 100
     light_remaining_time: int | None = None
     drying_remaining_time: int | None = None
     air_drying_remaining_time: int | None = None
@@ -87,18 +91,46 @@ class HotataHub:
         self._unsub_poll: Callable[[], None] | None = None
         self._unsub_token_refresh: Callable[[], None] | None = None
         self._token_expired: bool = False
+        self._token_permanently_invalid: bool = False  # True when 1073 received
+        self._last_error: str = ""  # Human-readable error description
         self._refresh_in_progress: bool = False
+        self._last_refresh_attempt: float = 0
         self._last_state_hash: str = ""
+
+        self._descent_time: int = int(entry.data.get(CONF_DESCENT_TIME, DEFAULT_DESCENT_TIME))
+        self._store = Store(hass, 1, f"hotata_airer.{entry.entry_id}.config")
+        self._last_motor_mode: int | None = None
+
+        _LOGGER.debug(
+            "Hub init: iot_id=%s, access_token=%s..., keys=%s",
+            self.iot_id,
+            str(self._access_token)[:20],
+            list(entry.data.keys()),
+        )
 
     @property
     def device_info(self) -> dict[str, Any]:
         """Return device info for HA device registry."""
-        return {
+        info = {
             "identifiers": {("hotata_airer", self.iot_id)},
             "name": self.name,
             "manufacturer": "Hotata (好太太)",
-            "model": "Smart Airer",
         }
+        # Model: productname + devicetype
+        model_parts = []
+        if self.entry.data.get("productname"):
+            model_parts.append(self.entry.data["productname"])
+        dtype = self.entry.data.get("devicetype")
+        if dtype:
+            model_parts.append(f"({dtype})")
+        info["model"] = " ".join(model_parts) if model_parts else "Smart Airer"
+        if self.entry.data.get("mac"):
+            mac = self.entry.data["mac"].replace(":", "").lower()
+            mac = ":".join(mac[i:i+2] for i in range(0, 12, 2))
+            info["connections"] = {("mac", mac)}
+        if self.entry.data.get("devicenickname"):
+            info["model"] = self.entry.data["devicenickname"]
+        return info
 
     @property
     def access_token(self) -> str:
@@ -112,8 +144,34 @@ class HotataHub:
 
     @property
     def token_expired(self) -> bool:
-        """Return True if token is expired."""
-        return self._token_expired
+        """Return True if token is expired or permanently invalid."""
+        return self._token_expired or self._token_permanently_invalid
+
+    @property
+    def token_permanently_invalid(self) -> bool:
+        """Return True if token is permanently invalid (1073)."""
+        return self._token_permanently_invalid
+
+    @property
+    def last_error(self) -> str:
+        """Return the last error message."""
+        return self._last_error
+
+    @property
+    def descent_time(self) -> int:
+        """Return the configured descent time."""
+        return self._descent_time
+
+    async def async_set_descent_time(self, value: int) -> None:
+        """Update descent time and persist."""
+        self._descent_time = value
+        await self._store.async_save({"descent_time": value})
+
+    async def async_load_persisted_config(self) -> None:
+        """Load persisted config values from Store."""
+        data = await self._store.async_load()
+        if data and "descent_time" in data:
+            self._descent_time = data["descent_time"]
 
     def add_listener(self, async_callback: Callable[[], Any]) -> Callable[[], None]:
         """Register a listener for state updates."""
@@ -126,6 +184,10 @@ class HotataHub:
                 self._listeners.remove(listener)
 
         return remove
+
+    async def notify_listeners(self) -> None:
+        """Notify all registered listeners of a state change (public)."""
+        await self._notify_listeners()
 
     async def _notify_listeners(self) -> None:
         """Notify all registered listeners of a state change."""
@@ -181,12 +243,21 @@ class HotataHub:
 
     async def _ensure_token_valid(self) -> bool:
         """Check if token is valid, refresh if needed."""
-        # 如果token已标记为过期，强制刷新
+        # Token permanently invalid (1073) — stop retrying
+        if self._token_permanently_invalid:
+            return False
+
+        # Rate limit cooldown — don't retry within 60 seconds of a 403
         if self._token_expired:
+            cooldown = 60
+            elapsed = time.time() - self._last_refresh_attempt
+            if elapsed < cooldown:
+                _LOGGER.debug("Token refresh on cooldown (%.0fs left), skipping", cooldown - elapsed)
+                return False
             _LOGGER.debug("Token marked as expired, forcing refresh")
             return await self.async_refresh_token()
 
-        # 检查是否即将过期（2分钟内）
+        # Check if nearing expiry (within 2 minutes)
         if self._expire_at > 0 and time.time() < self._expire_at - 120:
             _LOGGER.debug(
                 "Token still valid (expires in %ds), skipping refresh",
@@ -194,12 +265,12 @@ class HotataHub:
             )
             return True
 
-        # 需要刷新
+        # Refresh needed
         return await self.async_refresh_token()
 
     async def async_refresh_token(self) -> bool:
         """Refresh the access token."""
-        # 防止并发刷新
+        # Prevent concurrent refresh
         if self._refresh_in_progress:
             _LOGGER.debug("Token refresh already in progress, waiting")
             for _ in range(30):
@@ -209,6 +280,7 @@ class HotataHub:
             return False
 
         self._refresh_in_progress = True
+        self._last_refresh_attempt = time.time()
         try:
             async with httpx_client.get_async_client(self.hass) as client:
                 ts = int(time.time() * 1000)
@@ -259,9 +331,25 @@ class HotataHub:
                         }
                     )
                     self._token_expired = False
+                    self._token_permanently_invalid = False
+                    self._last_error = ""
                     _LOGGER.info("Token refreshed successfully")
                     return True
                 else:
+                    code = data.get("code", "")
+                    msg = data.get("message", "")
+                    # 1073 = login expired, token permanently invalid
+                    if code == "1073":
+                        self._last_error = f"登录已过期，请重新配置 refreshToken（code={code}）"
+                        _LOGGER.error(
+                            "Refresh token has expired (code=1073). "
+                            "User must re-authenticate via config flow."
+                        )
+                        self._token_permanently_invalid = True
+                    elif code == "403":
+                        self._last_error = f"操作过于频繁，等待冷却后重试"
+                    else:
+                        self._last_error = f"Token刷新失败: code={code}, msg={msg}"
                     _LOGGER.warning("Token refresh failed: %s", data)
                     self._token_expired = True
                     return False
@@ -295,7 +383,7 @@ class HotataHub:
                     _LOGGER.warning("Got 401, attempting token refresh")
                     self._token_expired = True
                     if await self.async_refresh_token():
-                        # 重新构建payload（timestamp会更新）
+                        # 重新构建 payload（timestamp 会更新）
                         payload = self.build_base_payload(self.user_id, self.iot_id)
                         payload["sign"] = self.generate_sign(payload)
                         resp = await client.post(
@@ -310,14 +398,36 @@ class HotataHub:
 
                 if data.get("code") == "000":
                     self._token_expired = False
+                    _LOGGER.debug("Property get raw data: %s", str(data)[:500])
                     self._parse_state(data)
                     return self.state
                 else:
                     _LOGGER.warning("Query failed: %s", data)
                     return None
+            except httpx_client.HTTPStatusError as err:
+                if err.response.status_code == 401:
+                    _LOGGER.warning("Got HTTP 401, attempting token refresh")
+                    self._token_expired = True
+                    if await self.async_refresh_token():
+                        payload = self.build_base_payload(self.user_id, self.iot_id)
+                        payload["sign"] = self.generate_sign(payload)
+                        resp = await client.post(
+                            API_PROPERTY_GET,
+                            json=payload,
+                            headers=self._build_headers(),
+                            timeout=10,
+                        )
+                        data = resp.json()
+                        if data.get("code") == "000":
+                            self._token_expired = False
+                            _LOGGER.debug("Property get raw data (retry): %s", str(data)[:500])
+                            self._parse_state(data)
+                            return self.state
+                    return None
+                _LOGGER.error("HTTP error querying device: %s", err)
+                return None
             except Exception as err:
-                _LOGGER.error("Query error: %s", err)
-                self._token_expired = True
+                _LOGGER.error("Query error (not auth-related): %s", err)
                 return None
 
     def _state_hash(self) -> str:
@@ -332,7 +442,7 @@ class HotataHub:
             f"{s.air_drying_on}",
             f"{s.disinfection_on}",
             f"{s.ions_on}",
-            f"{s.position}",
+            f"{s.simulated_position}",
             f"{s.motor_control_mode}",
             f"{s.light_remaining_time}",
             f"{s.drying_remaining_time}",
@@ -376,6 +486,24 @@ class HotataHub:
                 self.state.motor_control_mode = int(float(motor_mode))
             except (ValueError, TypeError):
                 pass
+
+        # Auto-sync simulated_position based on MotorControlMode transitions
+        current_mode = self.state.motor_control_mode
+        if current_mode is not None and self._last_motor_mode is not None:
+            if self._last_motor_mode != 0 and current_mode == 0:
+                # Motor stopped after moving → infer position
+                if self._last_motor_mode == 1:
+                    self.state.simulated_position = 100
+                    _LOGGER.debug(
+                        "Motor stopped after up, simulated_position → 100"
+                    )
+                elif self._last_motor_mode == 2:
+                    self.state.simulated_position = 0
+                    _LOGGER.debug(
+                        "Motor stopped after down, simulated_position → 0"
+                    )
+        if current_mode is not None:
+            self._last_motor_mode = current_mode
 
         # Switch states
         switch_mapping = {
@@ -424,6 +552,9 @@ class HotataHub:
             if current_hash != self._last_state_hash:
                 self._last_state_hash = current_hash
                 await self._notify_listeners()
+        else:
+            # Notify listeners on error so error_state sensor updates
+            await self._notify_listeners()
 
     async def _check_online_status(self) -> None:
         """Query device online status from API."""
@@ -513,13 +644,17 @@ class HotataHub:
                 data = resp.json()
 
                 if data.get("code") == "000":
+                    _LOGGER.debug(
+                        "API success on %s... (code=000)",
+                        url[-30:],
+                    )
                     return True
 
                 if data.get("code") == "401":
-                    _LOGGER.warning("Got 401, attempting token refresh and retry")
+                    _LOGGER.warning("Got 401 on %s..., attempting token refresh", url[-30:])
                     self._token_expired = True
                     if await self.async_refresh_token():
-                        # 重新构建payload，保留命令特定字段
+                        # Rebuild payload preserving command-specific fields
                         new_payload = self.build_base_payload(self.user_id, self.iot_id)
                         if "paramJson" in payload:
                             new_payload["paramJson"] = payload["paramJson"]
@@ -534,12 +669,13 @@ class HotataHub:
                         )
                         data = resp.json()
                         return data.get("code") == "000"
+                    _LOGGER.error("Token refresh failed, control command aborted")
                     return False
 
-                _LOGGER.warning("API error: %s", data)
+                _LOGGER.warning("API error on %s...: %s", url[-30:], data)
                 return False
             except Exception as err:
-                _LOGGER.error("API request error: %s", err)
+                _LOGGER.error("API request error on %s...: %s", url[-30:], err)
                 return False
 
     # ---- Polling management ----
@@ -572,7 +708,7 @@ class HotataHub:
 
     async def _token_refresh_callback(self, now: Any) -> None:
         """Scheduled token refresh (every 6 hours)."""
-        # 只在token即将过期时刷新
+        # 只在 token 即将过期时刷新
         if self._expire_at > 0 and time.time() < self._expire_at - 120:
             _LOGGER.debug(
                 "Token still valid (expires in %ds), skipping scheduled refresh",

@@ -1,0 +1,127 @@
+{
+  "domain": "hotata_airer",
+  "title": "好太太晾衣机",
+  "config": {
+    "step": {
+      "user": {
+        "title": "好太太晾衣机",
+        "description": "请输入从Hotata智家小程序抓包获取的 refreshToken。",
+        "data": {
+          "refresh_token": "刷新令牌",
+          "name": "设备名称",
+          "descent_time": "下降时长（秒），0=禁用模拟，使用设备自带位置"
+        }
+      },
+      "pick_device": {
+        "title": "选择设备",
+        "description": "共发现 {count} 台设备，请选择要添加的。",
+        "data": {
+          "iot_id": "设备"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "refreshToken 无效或认证失败。",
+      "invalid_token": "refreshToken 无效，请检查后重试。"
+    },
+    "reconfigure": {
+      "title": "更新 Refresh Token",
+      "description": "输入新的 refreshToken（从Hotata智家微信小程序获取）。",
+      "data": {
+        "refreshToken": "刷新令牌"
+      }
+    },
+    "abort": {
+      "all_devices_configured": "所有设备已添加完毕。"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "晾衣架下降时长设置",
+        "description": "配置晾衣架从完全升起到完全降下所需的总时长，用于模拟实时位置。设为 0 则禁用模拟，使用设备自带位置传感器。",
+        "data": {
+          "descent_time": "下降时长（秒），0=禁用模拟，使用设备自带位置"
+        }
+      }
+    }
+  },
+  "entity": {
+    "cover": {
+      "cover": {
+        "name": "晾衣机"
+      }
+    },
+    "light": {
+      "light": {
+        "name": "照明"
+      }
+    },
+    "switch": {
+      "power": {
+        "name": "电源"
+      },
+      "drying": {
+        "name": "烘干"
+      },
+      "air_drying": {
+        "name": "风干"
+      },
+      "disinfection": {
+        "name": "消毒"
+      },
+      "ions": {
+        "name": "负离子"
+      }
+    },
+    "sensor": {
+      "position": {
+        "name": "位置"
+      },
+      "light_remaining_time": {
+        "name": "灯光定时"
+      },
+      "drying_remaining_time": {
+        "name": "烘干定时"
+      },
+      "air_drying_remaining_time": {
+        "name": "风干定时"
+      },
+      "disinfection_remaining_time": {
+        "name": "消毒定时"
+      },
+      "ions_remaining_time": {
+        "name": "负离子定时"
+      },
+      "motor_control_mode": {
+        "name": "电机状态",
+        "state": {
+          "0": "停止",
+          "1": "上升",
+          "2": "下降"
+        }
+      },
+      "error_state": {
+        "name": "集成状态"
+      }
+    },
+    "binary_sensor": {
+      "online_status": {
+        "name": "在线状态"
+      },
+      "power": {
+        "name": "电源开关"
+      }
+    }
+  },
+  "number": {
+    "descent_time": {
+      "name": "下降时长"
+    }
+  },
+  "button": {
+    "reset_position": {
+      "name": "重置位置"
+    }
+  }
+}

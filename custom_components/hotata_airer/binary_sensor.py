@@ -30,11 +30,11 @@ class OnlineSensor(BinarySensorEntity):
 
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
     _attr_has_entity_name = True
+    _attr_translation_key = "online_status"
 
     def __init__(self, hub: HotataHub) -> None:
         """Initialize the sensor."""
         self._hub = hub
-        self._attr_name = "在线状态"
         self._attr_unique_id = f"{hub.iot_id}_online"
         self._attr_device_info = hub.device_info
 
@@ -63,11 +63,11 @@ class PowerSensor(BinarySensorEntity):
 
     _attr_device_class = BinarySensorDeviceClass.POWER
     _attr_has_entity_name = True
+    _attr_translation_key = "power"
 
     def __init__(self, hub: HotataHub) -> None:
         """Initialize the sensor."""
         self._hub = hub
-        self._attr_name = "电源开关"
         self._attr_unique_id = f"{hub.iot_id}_power"
         self._attr_device_info = hub.device_info
 

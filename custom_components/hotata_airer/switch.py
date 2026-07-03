@@ -15,11 +15,11 @@ from .hub import HotataHub
 _LOGGER = logging.getLogger(__name__)
 
 SWITCH_PROPERTIES = {
-    "电源": "PowerSwitch",
-    "烘干": "DryingSwitch",
-    "风干": "AirDryingSwitch",
-    "消毒": "DisinfectionSwitch",
-    "负离子": "IonsSwitch",
+    "power": "PowerSwitch",
+    "drying": "DryingSwitch",
+    "air_drying": "AirDryingSwitch",
+    "disinfection": "DisinfectionSwitch",
+    "ions": "IonsSwitch",
 }
 
 
@@ -30,7 +30,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up the switch platform."""
     hub: HotataHub = hass.data["hotata_airer"][entry.entry_id]
-    entities = [HotataSwitch(hub, key, prop) for key, prop in SWITCH_PROPERTIES.items()]
+    entities = [HotataSwitch(hub, trans_key, prop) for trans_key, prop in SWITCH_PROPERTIES.items()]
     async_add_entities(entities)
 
 
@@ -38,19 +38,15 @@ class HotataSwitch(SwitchEntity):
     """Representation of a Hotata airer switch."""
 
     _attr_assumed_state = True
+    _attr_has_entity_name = True
 
-    def __init__(self, hub: HotataHub, name: str, property_name: str) -> None:
+    def __init__(self, hub: HotataHub, translation_key: str, property_name: str) -> None:
         """Initialize the switch."""
         self._hub = hub
-        self._name = name
+        self._attr_translation_key = translation_key
         self._property_name = property_name
         self._attr_unique_id = f"{hub.iot_id}_switch_{property_name}"
         self._attr_device_info = hub.device_info
-
-    @property
-    def name(self) -> str:
-        """Return the name of the switch."""
-        return self._name
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
@@ -81,10 +77,10 @@ class HotataSwitch(SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the switch."""
-        await self._hub.control_switch(self._property_name, True)
-        self.async_write_ha_state()
+        if await self._hub.control_switch(self._property_name, True):
+            await self._hub.async_update()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the switch."""
-        await self._hub.control_switch(self._property_name, False)
-        self.async_write_ha_state()
+        if await self._hub.control_switch(self._property_name, False):
+            await self._hub.async_update()

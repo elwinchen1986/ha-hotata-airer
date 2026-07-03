@@ -1,0 +1,127 @@
+{
+  "domain": "hotata_airer",
+  "title": "Hotata Airer",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Hotata Airer",
+        "description": "Please enter the refresh token from the Hotata WeChat mini-program.",
+        "data": {
+          "refresh_token": "Refresh Token",
+          "name": "Device Name",
+          "descent_time": "Full descent duration in seconds (0=disable simulation, use device position)"
+        }
+      },
+      "pick_device": {
+        "title": "Select Device",
+        "description": "{count} device(s) available. Select which one to add.",
+        "data": {
+          "iot_id": "Device"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid refresh token or authentication failed.",
+      "invalid_token": "The refresh token is invalid. Please check and try again."
+    },
+    "reconfigure": {
+      "title": "Update Refresh Token",
+      "description": "Enter a new refresh token from the Hotata WeChat mini-program.",
+      "data": {
+        "refreshToken": "Refresh Token"
+      }
+    },
+    "abort": {
+      "all_devices_configured": "All devices have already been configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Cover Position Configuration",
+        "description": "Configure the time it takes for the cover to go from fully open to fully closed. Set to 0 to disable simulation and use the device's position sensor.",
+        "data": {
+          "descent_time": "Full descent duration in seconds (0=disable simulation, use device position)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "cover": {
+      "cover": {
+        "name": "Airer"
+      }
+    },
+    "light": {
+      "light": {
+        "name": "Light"
+      }
+    },
+    "switch": {
+      "power": {
+        "name": "Power"
+      },
+      "drying": {
+        "name": "Drying"
+      },
+      "air_drying": {
+        "name": "Air Drying"
+      },
+      "disinfection": {
+        "name": "Disinfection"
+      },
+      "ions": {
+        "name": "Ions"
+      }
+    },
+    "sensor": {
+      "position": {
+        "name": "Position"
+      },
+      "light_remaining_time": {
+        "name": "Light Timer"
+      },
+      "drying_remaining_time": {
+        "name": "Drying Timer"
+      },
+      "air_drying_remaining_time": {
+        "name": "Air Drying Timer"
+      },
+      "disinfection_remaining_time": {
+        "name": "Disinfection Timer"
+      },
+      "ions_remaining_time": {
+        "name": "Ions Timer"
+      },
+      "motor_control_mode": {
+        "name": "Motor Mode",
+        "state": {
+          "0": "Stopped",
+          "1": "Rising",
+          "2": "Descending"
+        }
+      },
+      "error_state": {
+        "name": "Error State"
+      }
+    },
+    "binary_sensor": {
+      "online_status": {
+        "name": "Online Status"
+      },
+      "power": {
+        "name": "Power Switch"
+      }
+    }
+  },
+  "number": {
+    "descent_time": {
+      "name": "Descent Time"
+    }
+  },
+  "button": {
+    "reset_position": {
+      "name": "Reset Position"
+    }
+  }
+}

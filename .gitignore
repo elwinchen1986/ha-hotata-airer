@@ -19,3 +19,11 @@ dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Test & debug scripts (contain hardcoded tokens)
+ha_test_*.py
+test_*.py
+check_*.py
+fix_*.py
+update_*.py
+tmp/

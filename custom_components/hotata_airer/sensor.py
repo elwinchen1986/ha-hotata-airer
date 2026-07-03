@@ -1,4 +1,4 @@
-"""Sensor platform for Hotata Airer - all remaining time sensors."""
+"""Sensor platform for Hotata Airer."""
 
 from __future__ import annotations
 
@@ -13,6 +13,14 @@ from .hub import HotataHub
 
 _LOGGER = logging.getLogger(__name__)
 
+REMAINING_TIME_SENSORS = {
+    "light_remaining_time": "light_time",
+    "disinfection_remaining_time": "disinfection_time",
+    "drying_remaining_time": "drying_time",
+    "air_drying_remaining_time": "air_drying_time",
+    "ions_remaining_time": "ions_time",
+}
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -21,15 +29,16 @@ async def async_setup_entry(
 ) -> None:
     """Set up the sensor platform."""
     hub: HotataHub = hass.data["hotata_airer"][entry.entry_id]
-    async_add_entities([
+    _LOGGER.debug("Setting up sensor platform for %s, entry data keys: %s", entry.entry_id, list(entry.data.keys()))
+    entities = [
         PositionSensor(hub),
-        LightRemainingTimeSensor(hub),
-        DisinfectionRemainingTimeSensor(hub),
-        DryingRemainingTimeSensor(hub),
-        AirDryingRemainingTimeSensor(hub),
-        IonsRemainingTimeSensor(hub),
+        *[RemainingTimeSensor(hub, trans_key, old_suffix)
+          for trans_key, old_suffix in REMAINING_TIME_SENSORS.items()],
         MotorControlModeSensor(hub),
-    ])
+        ErrorStateSensor(hub),
+    ]
+    _LOGGER.debug("Adding %d sensor entities", len(entities))
+    async_add_entities(entities)
 
 
 class PositionSensor(SensorEntity):
@@ -38,11 +47,11 @@ class PositionSensor(SensorEntity):
     _attr_native_unit_of_measurement = "%"
     _attr_state_class = "measurement"
     _attr_has_entity_name = True
+    _attr_translation_key = "position"
 
     def __init__(self, hub: HotataHub) -> None:
         """Initialize the sensor."""
         self._hub = hub
-        self._attr_name = "位置"
         self._attr_unique_id = f"{hub.iot_id}_position"
         self._attr_device_info = hub.device_info
 
@@ -57,8 +66,8 @@ class PositionSensor(SensorEntity):
 
     @property
     def native_value(self) -> int | None:
-        """Return the position value."""
-        return self._hub.state.position
+        """Return the simulated position value."""
+        return self._hub.state.simulated_position
 
     @property
     def available(self) -> bool:
@@ -66,18 +75,19 @@ class PositionSensor(SensorEntity):
         return not self._hub.token_expired
 
 
-class LightRemainingTimeSensor(SensorEntity):
-    """Light remaining time sensor."""
+class RemainingTimeSensor(SensorEntity):
+    """Generic remaining time sensor for all timed functions."""
 
     _attr_native_unit_of_measurement = "min"
     _attr_state_class = "measurement"
     _attr_has_entity_name = True
 
-    def __init__(self, hub: HotataHub) -> None:
+    def __init__(self, hub: HotataHub, translation_key: str, old_suffix: str) -> None:
         """Initialize the sensor."""
         self._hub = hub
-        self._attr_name = "灯光定时"
-        self._attr_unique_id = f"{hub.iot_id}_light_time"
+        self._attr_translation_key = translation_key
+        self._state_attr = translation_key
+        self._attr_unique_id = f"{hub.iot_id}_{old_suffix}"
         self._attr_device_info = hub.device_info
 
     async def async_added_to_hass(self) -> None:
@@ -92,147 +102,7 @@ class LightRemainingTimeSensor(SensorEntity):
     @property
     def native_value(self) -> int | None:
         """Return the remaining time value."""
-        val = self._hub.state.light_remaining_time
-        return int(val) if val is not None else None
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return not self._hub.token_expired
-
-
-class DisinfectionRemainingTimeSensor(SensorEntity):
-    """Disinfection remaining time sensor."""
-
-    _attr_native_unit_of_measurement = "min"
-    _attr_state_class = "measurement"
-    _attr_has_entity_name = True
-
-    def __init__(self, hub: HotataHub) -> None:
-        """Initialize the sensor."""
-        self._hub = hub
-        self._attr_name = "消毒定时"
-        self._attr_unique_id = f"{hub.iot_id}_disinfection_time"
-        self._attr_device_info = hub.device_info
-
-    async def async_added_to_hass(self) -> None:
-        """When entity is added to hass."""
-        self.async_write_ha_state()
-        self._hub.add_listener(self._handle_update)
-
-    async def _handle_update(self) -> None:
-        """Handle state update."""
-        self.async_write_ha_state()
-
-    @property
-    def native_value(self) -> int | None:
-        """Return the remaining time value."""
-        val = self._hub.state.disinfection_remaining_time
-        return int(val) if val is not None else None
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return not self._hub.token_expired
-
-
-class DryingRemainingTimeSensor(SensorEntity):
-    """Drying remaining time sensor."""
-
-    _attr_native_unit_of_measurement = "min"
-    _attr_state_class = "measurement"
-    _attr_has_entity_name = True
-
-    def __init__(self, hub: HotataHub) -> None:
-        """Initialize the sensor."""
-        self._hub = hub
-        self._attr_name = "烘干定时"
-        self._attr_unique_id = f"{hub.iot_id}_drying_time"
-        self._attr_device_info = hub.device_info
-
-    async def async_added_to_hass(self) -> None:
-        """When entity is added to hass."""
-        self.async_write_ha_state()
-        self._hub.add_listener(self._handle_update)
-
-    async def _handle_update(self) -> None:
-        """Handle state update."""
-        self.async_write_ha_state()
-
-    @property
-    def native_value(self) -> int | None:
-        """Return the remaining time value."""
-        val = self._hub.state.drying_remaining_time
-        return int(val) if val is not None else None
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return not self._hub.token_expired
-
-
-class AirDryingRemainingTimeSensor(SensorEntity):
-    """Air drying remaining time sensor."""
-
-    _attr_native_unit_of_measurement = "min"
-    _attr_state_class = "measurement"
-    _attr_has_entity_name = True
-
-    def __init__(self, hub: HotataHub) -> None:
-        """Initialize the sensor."""
-        self._hub = hub
-        self._attr_name = "风干定时"
-        self._attr_unique_id = f"{hub.iot_id}_air_drying_time"
-        self._attr_device_info = hub.device_info
-
-    async def async_added_to_hass(self) -> None:
-        """When entity is added to hass."""
-        self.async_write_ha_state()
-        self._hub.add_listener(self._handle_update)
-
-    async def _handle_update(self) -> None:
-        """Handle state update."""
-        self.async_write_ha_state()
-
-    @property
-    def native_value(self) -> int | None:
-        """Return the remaining time value."""
-        val = self._hub.state.air_drying_remaining_time
-        return int(val) if val is not None else None
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return not self._hub.token_expired
-
-
-class IonsRemainingTimeSensor(SensorEntity):
-    """Ions remaining time sensor."""
-
-    _attr_native_unit_of_measurement = "min"
-    _attr_state_class = "measurement"
-    _attr_has_entity_name = True
-
-    def __init__(self, hub: HotataHub) -> None:
-        """Initialize the sensor."""
-        self._hub = hub
-        self._attr_name = "负离子定时"
-        self._attr_unique_id = f"{hub.iot_id}_ions_time"
-        self._attr_device_info = hub.device_info
-
-    async def async_added_to_hass(self) -> None:
-        """When entity is added to hass."""
-        self.async_write_ha_state()
-        self._hub.add_listener(self._handle_update)
-
-    async def _handle_update(self) -> None:
-        """Handle state update."""
-        self.async_write_ha_state()
-
-    @property
-    def native_value(self) -> int | None:
-        """Return the remaining time value."""
-        val = self._hub.state.ions_remaining_time
+        val = getattr(self._hub.state, self._state_attr, None)
         return int(val) if val is not None else None
 
     @property
@@ -245,11 +115,11 @@ class MotorControlModeSensor(SensorEntity):
     """Motor control mode sensor (0=stop, 1=up, 2=down)."""
 
     _attr_has_entity_name = True
+    _attr_translation_key = "motor_control_mode"
 
     def __init__(self, hub: HotataHub) -> None:
         """Initialize the sensor."""
         self._hub = hub
-        self._attr_name = "电机模式"
         self._attr_unique_id = f"{hub.iot_id}_motor_mode"
         self._attr_device_info = hub.device_info
 
@@ -263,15 +133,44 @@ class MotorControlModeSensor(SensorEntity):
         self.async_write_ha_state()
 
     @property
-    def native_value(self) -> str | None:
-        """Return the motor mode as string."""
-        mode_map = {0: "停止", 1: "上升", 2: "下降"}
-        mode = self._hub.state.motor_control_mode
-        if mode is not None:
-            return mode_map.get(mode, str(mode))
-        return None
+    def native_value(self) -> int | None:
+        """Return the motor mode as raw value (translated by HA)."""
+        return self._hub.state.motor_control_mode
 
     @property
     def available(self) -> bool:
         """Return if entity is available."""
         return not self._hub.token_expired
+
+
+class ErrorStateSensor(SensorEntity):
+    """Error state sensor — shows error description when token is invalid."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "error_state"
+    _attr_icon = "mdi:alert-circle"
+
+    def __init__(self, hub: HotataHub) -> None:
+        """Initialize the sensor."""
+        self._hub = hub
+        self._attr_unique_id = f"{hub.iot_id}_error_state"
+        self._attr_device_info = hub.device_info
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        self.async_write_ha_state()
+        self._hub.add_listener(self._handle_update)
+
+    async def _handle_update(self) -> None:
+        """Handle state update."""
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> str:
+        """Return the error description."""
+        return self._hub.last_error or "正常"
+
+    @property
+    def available(self) -> bool:
+        """Always available so user can see error state."""
+        return True

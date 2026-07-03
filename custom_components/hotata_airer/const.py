@@ -12,12 +12,13 @@ API_ONLINE_STATUS = f"{API_BASE}/device/synOnlineStatus"
 # App fixed parameters (from APK/HAR analysis)
 APP_KEY = "miniapp-hotata-prod"
 APP_SECRET = "B322B40A-DBD2-26A2-F935-6E760917CB73"
-APP_VERSION = "miniapp_4.4.5.1"
-IMEI = "Windows 10 x64_w4.1.7.33_s3.14.3"
+APP_VERSION = "miniapp_4.4.6.1"
+IMEI = "Windows Unknown x64_w4.1.10.53_s3.16.1"
 PHONE_MODEL = "microsoft"
-SYS_VERSION = "Windows 10 x64"
+SYS_VERSION = "Windows Unknown x64"
 
 DEFAULT_NAME = "好太太晾衣机"
+DEFAULT_DESCENT_TIME = 10  # 从顶降到底的秒数，0=禁用模拟
 
 # Config entry keys
 CONF_REFRESH_TOKEN = "refresh_token"
@@ -25,5 +26,6 @@ CONF_ACCESS_TOKEN = "access_token"
 CONF_USER_ID = "userId"
 CONF_IOT_ID = "iotId"
 CONF_NAME = "name"
+CONF_DESCENT_TIME = "descent_time"
 
 DOMAIN = "hotata_airer"

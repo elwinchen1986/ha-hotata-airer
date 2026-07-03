@@ -38,12 +38,10 @@ class HotataLight(LightEntity):
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
     _attr_translation_key = "light"
     _attr_has_entity_name = True
-    _attr_assumed_state = True
 
     def __init__(self, hub: HotataHub) -> None:
         """Initialize the light."""
         self._hub = hub
-        self._attr_name = "照明"
         self._attr_unique_id = f"{hub.iot_id}_light"
         self._attr_device_info = hub.device_info
         self._is_on: bool = False
@@ -97,19 +95,16 @@ class HotataLight(LightEntity):
         # 先开灯（如果尚未开），再调亮度
         if not self._is_on:
             await self._hub.control_switch("LightSwitch", True)
-            self._is_on = True
             # 短暂等待设备响应
             await asyncio.sleep(0.2)
 
         if ATTR_BRIGHTNESS in kwargs:
             target = brightness_to_value((1, 100), kwargs[ATTR_BRIGHTNESS])
             await self._hub.set_brightness(int(target))
-            self._brightness = kwargs[ATTR_BRIGHTNESS]
 
-        self.async_write_ha_state()
+        await self._hub.async_update()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the light off."""
         await self._hub.control_switch("LightSwitch", False)
-        self._is_on = False
-        self.async_write_ha_state()
+        await self._hub.async_update()

@@ -8,7 +8,7 @@ import time
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import httpx_client
@@ -21,15 +21,18 @@ from .const import (
     APP_SECRET,
     APP_VERSION,
     CONF_ACCESS_TOKEN,
+    CONF_DESCENT_TIME,
     CONF_IOT_ID,
     CONF_REFRESH_TOKEN,
     CONF_USER_ID,
+    DEFAULT_DESCENT_TIME,
     DEFAULT_NAME,
     DOMAIN,
     IMEI,
     PHONE_MODEL,
     SYS_VERSION,
 )
+from .hub import HotataHub
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -154,9 +157,10 @@ async def _init_from_refresh_token(
                 return None
 
             # Return tokens + first device
-            iot_id = devices[0].get("iotid") or devices[0].get("iotId")
+            device = devices[0]
+            iot_id = device.get("iotid") or device.get("iotId")
             if not iot_id:
-                _LOGGER.error("No iotId in first device: %s", devices[0])
+                _LOGGER.error("No iotId in first device: %s", device)
                 return None
 
         except Exception as e:
@@ -206,6 +210,11 @@ async def _init_from_refresh_token(
             CONF_REFRESH_TOKEN: new_refresh_token,
             CONF_USER_ID: user_id,
             CONF_IOT_ID: iot_id,
+            "mac": device.get("devicename", ""),
+            "productname": device.get("productname", ""),
+            "devicetype": device.get("devicetype", 0),
+            "devicenickname": device.get("devicenickname", ""),
+            "productkey": device.get("productkey", ""),
         }
 
 
@@ -250,6 +259,57 @@ async def _get_device_list(
 class HotataAirerSimpleConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
+    @staticmethod
+    def async_get_options_flow(config_entry):
+        """Get the options flow for this handler."""
+        return HotataAirerOptionsFlowHandler(config_entry)
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Reconfigure: update refreshToken when it expires."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            credentials = await _init_from_refresh_token(
+                self.hass,
+                user_input[CONF_REFRESH_TOKEN],
+            )
+            if credentials is not None:
+                _LOGGER.debug(
+                    "Reconfigure success. New access_token=%s..., user_id=%s, iot_id=%s",
+                    credentials[CONF_ACCESS_TOKEN][:20],
+                    credentials.get(CONF_USER_ID, "N/A"),
+                    credentials.get(CONF_IOT_ID, "N/A"),
+                )
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={
+                        **credentials,
+                        CONF_NAME: entry.data.get(CONF_NAME, DEFAULT_NAME),
+                    },
+                )
+            errors["base"] = "invalid_token"
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_REFRESH_TOKEN,
+                    default=entry.data.get(CONF_REFRESH_TOKEN, ""),
+                ): str,
+            }
+        )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "hint": "输入新的 refreshToken（从Hotata智家微信小程序获取）",
+            },
+        )
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -264,6 +324,7 @@ class HotataAirerSimpleConfigFlow(ConfigFlow, domain=DOMAIN):
             if credentials is not None:
                 # Store for potential multi-device flow
                 self._auth_data = credentials
+                self._descent_time = user_input.get(CONF_DESCENT_TIME, DEFAULT_DESCENT_TIME)
 
                 # Get device list for uniqueness check
                 devices = await _get_device_list(
@@ -291,9 +352,10 @@ class HotataAirerSimpleConfigFlow(ConfigFlow, domain=DOMAIN):
                 target = unconfigured[0] if unconfigured else devices[0]
                 iot_id = target.get("iotid") or target.get("iotId")
                 device_name = (
-                    target.get("deviceName")
-                    or target.get("name")
-                    or f"好太太晾衣机 ({iot_id[:8]})"
+                    target.get("deviceNickName")
+                    or target.get("devicenickname")
+                    or target.get("deviceName")
+                    or "好太太晾衣机"
                 )
 
                 await self.async_set_unique_id(iot_id)
@@ -305,6 +367,7 @@ class HotataAirerSimpleConfigFlow(ConfigFlow, domain=DOMAIN):
                         **credentials,
                         CONF_IOT_ID: iot_id,
                         CONF_NAME: device_name,
+                        CONF_DESCENT_TIME: self._descent_time,
                     },
                 )
 
@@ -313,7 +376,9 @@ class HotataAirerSimpleConfigFlow(ConfigFlow, domain=DOMAIN):
         schema = vol.Schema(
             {
                 vol.Required(CONF_REFRESH_TOKEN): str,
-                vol.Optional(CONF_NAME, default=DEFAULT_NAME): str,
+                vol.Required(
+                    CONF_DESCENT_TIME, default=DEFAULT_DESCENT_TIME
+                ): vol.All(vol.Coerce(int), vol.Range(min=0, max=20)),
             }
         )
 
@@ -321,9 +386,6 @@ class HotataAirerSimpleConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=schema,
             errors=errors,
-            description_placeholders={
-                "help": "在好太太智家小程序中抓包获取 refreshToken"
-            },
         )
 
     async def async_step_pick_device(
@@ -350,9 +412,10 @@ class HotataAirerSimpleConfigFlow(ConfigFlow, domain=DOMAIN):
                 if (d.get("iotid") or d.get("iotId")) == iot_id
             )
             device_name = (
-                device.get("deviceName")
-                or device.get("name")
-                or f"好太太晾衣机 ({iot_id[:8]})"
+                device.get("deviceNickName")
+                or device.get("devicenickname")
+                or device.get("deviceName")
+                or "好太太晾衣机"
             )
 
             await self.async_set_unique_id(iot_id)
@@ -364,6 +427,7 @@ class HotataAirerSimpleConfigFlow(ConfigFlow, domain=DOMAIN):
                     **self._auth_data,
                     CONF_IOT_ID: iot_id,
                     CONF_NAME: device_name,
+                    CONF_DESCENT_TIME: self._descent_time,
                 },
             )
 
@@ -383,4 +447,46 @@ class HotataAirerSimpleConfigFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={
                 "count": str(len(options)),
             },
+        )
+
+
+class HotataAirerOptionsFlowHandler(OptionsFlow):
+    """Handle options flow for Hotata Airer."""
+
+    def __init__(self, config_entry) -> None:
+        """Initialize options flow."""
+        self._config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Manage the options."""
+        if user_input is not None:
+            # Sync descent_time to hub's runtime store
+            descent_time = user_input.get(CONF_DESCENT_TIME, DEFAULT_DESCENT_TIME)
+            hub: HotataHub = self.hass.data[DOMAIN].get(
+                self._config_entry.entry_id
+            )
+            if hub:
+                await hub.async_set_descent_time(descent_time)
+            return self.async_create_entry(title="", data=user_input)
+
+        current = DEFAULT_DESCENT_TIME
+        hub: HotataHub = self.hass.data[DOMAIN].get(
+            self._config_entry.entry_id
+        )
+        if hub:
+            current = hub.descent_time
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_DESCENT_TIME, default=current
+                ): vol.All(vol.Coerce(int), vol.Range(min=0, max=20)),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=schema,
         )
