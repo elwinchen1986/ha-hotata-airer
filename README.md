@@ -153,8 +153,7 @@ cp -r custom_components/hotata_airer /path/to/your/ha/config/custom_components/
 
 | 版本 | 说明 |
 |------|------|
-| **v2.2.0** | 正式版发布，新增 button/number 平台，完善翻译，优化配置流程 |
-| **v2.2.0-beta** | Beta 测试版，新增 button/number 平台、诊断支持、选项配置 |
+| **v2.2.0** | **两大重磅更新**：多设备支持（可添加多台晾衣机）+ 下降时长设置（可配置模拟位置精度）。另新增 button 重置位置、诊断支持、选项配置、完善翻译 |
 | **v2.1.1** | 修复 Token 刷新机制，兼容 HA 2026 |
 | **v2.1.0** | 同步本地最新版本，优化 Token 刷新机制 |
 | **v2.0.0** | 初始公开版本 |
