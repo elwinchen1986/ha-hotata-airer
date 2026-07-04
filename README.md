@@ -162,7 +162,7 @@ cp -r custom_components/hotata_airer /path/to/your/ha/config/custom_components/
 
 ## 逆向工程
 
-详细的逆向分析文档请参见 [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md)，包含好太太 App 的 APK 分析、Native .so 解密、阿里云 IoT 协议栈测绘等内容。
+逆向分析文档（内部，不公开），包含好太太 App 的 API 协议、签名算法、设备控制命令等内容。
 
 ---
 

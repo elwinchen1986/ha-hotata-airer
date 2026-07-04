@@ -27,3 +27,6 @@ check_*.py
 fix_*.py
 update_*.py
 tmp/
+
+# Reverse engineering / security-sensitive analysis
+REVERSE_ENGINEERING.md
