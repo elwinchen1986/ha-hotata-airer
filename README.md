@@ -158,13 +158,6 @@ cp -r custom_components/hotata_airer /path/to/your/ha/config/custom_components/
 | **v2.1.0** | 同步本地最新版本，优化 Token 刷新机制 |
 | **v2.0.0** | 初始公开版本 |
 
----
-
-## 逆向工程
-
-逆向分析文档（内部，不公开），包含好太太 App 的 API 协议、签名算法、设备控制命令等内容。
-
----
 
 ## License
 
