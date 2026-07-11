@@ -92,7 +92,10 @@
         }
       },
       "error_state": {
-        "name": "集成状态"
+        "name": "集成状态",
+        "state": {
+          "normal": "正常"
+        }
       }
     },
     "binary_sensor": {

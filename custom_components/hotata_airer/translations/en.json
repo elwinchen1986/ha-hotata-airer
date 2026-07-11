@@ -92,7 +92,10 @@
         }
       },
       "error_state": {
-        "name": "Error State"
+        "name": "Error State",
+        "state": {
+          "normal": "Normal"
+        }
       }
     },
     "binary_sensor": {

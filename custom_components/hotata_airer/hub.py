@@ -295,7 +295,7 @@ class HotataAccount:
                     # 1073 = login expired, token permanently invalid
                     if code == "1073":
                         self._last_error = (
-                            f"登录已过期，请重新配置 refreshToken（code={code}）"
+                            f"Login expired, please re-configure refreshToken (code={code})"
                         )
                         _LOGGER.error(
                             "Refresh token has expired (code=1073). "
@@ -304,9 +304,9 @@ class HotataAccount:
                         self._token_permanently_invalid = True
                         await self._notify_token_expired()
                     elif code == "403":
-                        self._last_error = "操作过于频繁，等待冷却后重试"
+                        self._last_error = "Too many requests, waiting for cooldown"
                     else:
-                        self._last_error = f"Token刷新失败: code={code}, msg={msg}"
+                        self._last_error = f"Token refresh failed: code={code}, msg={msg}"
                     _LOGGER.warning("Token refresh failed: %s", data)
                     self._token_expired = True
                     return False
@@ -357,14 +357,14 @@ class HotataAccount:
         self, new_devices: list[dict[str, Any]]
     ) -> None:
         """Notify the user that new airers were auto-added."""
-        names = ", ".join(d.get(CONF_NAME, "晾衣机") for d in new_devices)
+        names = ", ".join(d.get(CONF_NAME, DEFAULT_NAME) for d in new_devices)
         try:
             self.hass.components.persistent_notification.async_create(
                 message=(
-                    f"已自动发现并添加 {len(new_devices)} 台新晾衣机：{names}。"
-                    "无需重新配置，刷新页面即可看到新设备。"
+                    f"Auto-discovered and added {len(new_devices)} new airer(s): {names}. "
+                    "No reconfiguration needed, refresh the page to see the new devices."
                 ),
-                title="Hotata 晾衣机 · 新设备已添加",
+                title="Hotata Airer · New Devices Added",
                 notification_id=f"hotata_new_devices_{self.entry.entry_id}",
             )
         except Exception as err:
@@ -378,11 +378,12 @@ class HotataAccount:
         try:
             self.hass.components.persistent_notification.async_create(
                 message=(
-                    "Hotata 晾衣机的登录已过期（refreshToken 失效），设备已停止更新。"
-                    "请到 设置 → 设备与服务 → Hotata Airer → 配置 → 重新配置，"
-                    "粘贴新的 refreshToken（从 Hotata 智家微信小程序获取）。"
+                    "Hotata Airer login has expired (refreshToken is invalid), "
+                    "device updates have stopped. "
+                    "Go to Settings → Devices & Services → Hotata Airer → Configure → Reconfigure, "
+                    "and paste a new refreshToken (from the Hotata WeChat mini-program)."
                 ),
-                title="Hotata 晾衣机 · Token 已过期",
+                title="Hotata Airer · Token Expired",
                 notification_id=f"hotata_token_expired_{self.entry.entry_id}",
             )
         except Exception as err:

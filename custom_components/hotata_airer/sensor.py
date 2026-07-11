@@ -173,7 +173,7 @@ class ErrorStateSensor(SensorEntity):
     @property
     def native_value(self) -> str:
         """Return the error description."""
-        return self._hub.last_error or "正常"
+        return self._hub.last_error or "normal"
 
     @property
     def available(self) -> bool:

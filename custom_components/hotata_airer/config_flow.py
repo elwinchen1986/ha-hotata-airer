@@ -271,9 +271,6 @@ class HotataAirerConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=schema,
             errors=errors,
-            description_placeholders={
-                "hint": "输入 refreshToken（从Hotata智家微信小程序获取）",
-            },
         )
 
     async def async_step_reconfigure(
@@ -337,7 +334,4 @@ class HotataAirerConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="reconfigure",
             data_schema=schema,
             errors=errors,
-            description_placeholders={
-                "hint": "refreshToken 已过期，请输入新的（从Hotata智家微信小程序获取）",
-            },
         )
