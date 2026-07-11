@@ -7,7 +7,6 @@ import time
 from typing import Any, Callable
 
 from homeassistant.components.cover import (
-    CoverDeviceClass,
     CoverEntity,
     CoverEntityFeature,
 )
@@ -57,7 +56,6 @@ class HotataCover(CoverEntity):
         | CoverEntityFeature.STOP
         | _SET_COVER_POSITION
     )
-    _attr_device_class = CoverDeviceClass.AWNING
     _attr_has_entity_name = True
     _attr_translation_key = "cover"
 
