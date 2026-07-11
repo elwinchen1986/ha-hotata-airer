@@ -9,7 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .hub import HotataHub
+from .hub import HotataAccount, HotataHub
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,15 +28,20 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the sensor platform."""
-    hub: HotataHub = hass.data["hotata_airer"][entry.entry_id]
-    _LOGGER.debug("Setting up sensor platform for %s, entry data keys: %s", entry.entry_id, list(entry.data.keys()))
-    entities = [
-        PositionSensor(hub),
-        *[RemainingTimeSensor(hub, trans_key, old_suffix)
-          for trans_key, old_suffix in REMAINING_TIME_SENSORS.items()],
-        MotorControlModeSensor(hub),
-        ErrorStateSensor(hub),
-    ]
+    account: HotataAccount = hass.data["hotata_airer"][entry.entry_id]
+    _LOGGER.debug(
+        "Setting up sensor platform for %s, devices=%d",
+        entry.entry_id, len(account.device_hubs),
+    )
+    entities = []
+    for hub in account.device_hubs.values():
+        entities.extend([
+            PositionSensor(hub),
+            *[RemainingTimeSensor(hub, trans_key, old_suffix)
+              for trans_key, old_suffix in REMAINING_TIME_SENSORS.items()],
+            MotorControlModeSensor(hub),
+            ErrorStateSensor(hub),
+        ])
     _LOGGER.debug("Adding %d sensor entities", len(entities))
     async_add_entities(entities)
 

@@ -5,16 +5,15 @@
     "step": {
       "user": {
         "title": "好太太晾衣机",
-        "description": "请输入从Hotata智家小程序抓包获取的 refreshToken。",
+        "description": "请输入从Hotata智家小程序抓包获取的 refreshToken。该账号下的所有晾衣机将一次性添加，refreshToken 只需输入这一次。",
         "data": {
           "refresh_token": "刷新令牌",
-          "name": "设备名称",
           "descent_time": "下降时长（秒），0=禁用模拟，使用设备自带位置"
         }
       },
-      "pick_device": {
-        "title": "选择设备",
-        "description": "共发现 {count} 台设备，请选择要添加的。",
+      "subentry_user": {
+        "title": "添加晾衣机",
+        "description": "共发现 {count} 台尚未添加的设备，请选择要添加的（无需再次输入 refreshToken）。",
         "data": {
           "iot_id": "设备"
         }
@@ -22,7 +21,8 @@
     },
     "error": {
       "invalid_auth": "refreshToken 无效或认证失败。",
-      "invalid_token": "refreshToken 无效，请检查后重试。"
+      "invalid_token": "refreshToken 无效，请检查后重试。",
+      "no_devices": "该账号下未发现任何设备。"
     },
     "reconfigure": {
       "title": "更新 Refresh Token",
@@ -32,18 +32,8 @@
       }
     },
     "abort": {
-      "all_devices_configured": "所有设备已添加完毕。"
-    }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "title": "晾衣架下降时长设置",
-        "description": "配置晾衣架从完全升起到完全降下所需的总时长，用于模拟实时位置。设为 0 则禁用模拟，使用设备自带位置传感器。",
-        "data": {
-          "descent_time": "下降时长（秒），0=禁用模拟，使用设备自带位置"
-        }
-      }
+      "all_devices_configured": "所有设备已添加完毕。",
+      "no_account": "未找到已配置的账号。"
     }
   },
   "entity": {

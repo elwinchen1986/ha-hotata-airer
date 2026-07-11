@@ -1,4 +1,4 @@
-"""Diagnostics support for Hotata Airer."""
+"""Diagnostics support for Hotata Airer (single account entry, device list)."""
 
 from __future__ import annotations
 
@@ -9,18 +9,66 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
+from .const import DOMAIN
 from .hub import HotataHub
 
-DOMAIN = "hotata_airer"
+_TRUNCATE_MAX = 40
+
+
+def _truncate_token(value: str, max_len: int = _TRUNCATE_MAX) -> str:
+    """Truncate a token value for safe diagnostic display."""
+    if isinstance(value, str) and len(value) > max_len:
+        return value[:max_len] + "..."
+    return value
+
+
+def _device_state(hub: HotataHub) -> dict[str, Any]:
+    """Collect diagnostic data for a single device hub."""
+    s = hub.state
+    return {
+        "online": s.online,
+        "power_on": s.power_on,
+        "light_on": s.light_on,
+        "light_brightness": s.light_brightness,
+        "drying_on": s.drying_on,
+        "air_drying_on": s.air_drying_on,
+        "disinfection_on": s.disinfection_on,
+        "ions_on": s.ions_on,
+        "position": s.position,
+        "motor_control_mode": s.motor_control_mode,
+        "light_remaining_time": s.light_remaining_time,
+        "drying_remaining_time": s.drying_remaining_time,
+        "air_drying_remaining_time": s.air_drying_remaining_time,
+        "ions_remaining_time": s.ions_remaining_time,
+        "disinfection_remaining_time": s.disinfection_remaining_time,
+    }
+
+
+def _runtime(hub: HotataHub) -> dict[str, Any]:
+    """Collect account/device runtime diagnostics for a single device hub."""
+    return {
+        "descent_time": hub.descent_time,
+        "token_expired": hub.token_expired,
+        "token_permanently_invalid": hub.token_permanently_invalid,
+        "last_error": hub.last_error,
+        "user_id": hub.user_id,
+        "iot_id": hub.iot_id,
+    }
+
+
+def _entry_hubs(hass: HomeAssistant, entry: ConfigEntry) -> list[HotataHub]:
+    """Return the device hubs belonging to an account config entry."""
+    account = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if account is None:
+        return []
+    return list(account.device_hubs.values())
 
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant,
     entry: ConfigEntry,
 ) -> dict[str, Any]:
-    """Return diagnostics for a config entry."""
-    hub: HotataHub = hass.data[DOMAIN][entry.entry_id]
-
+    """Return diagnostics aggregated for the account config entry."""
     data = {
         "entry": {
             "entry_id": entry.entry_id,
@@ -33,36 +81,20 @@ async def async_get_config_entry_diagnostics(
             },
             "options": entry.options,
         },
-        "device_state": {
-            "online": hub.state.online,
-            "power_on": hub.state.power_on,
-            "light_on": hub.state.light_on,
-            "light_brightness": hub.state.light_brightness,
-            "drying_on": hub.state.drying_on,
-            "air_drying_on": hub.state.air_drying_on,
-            "disinfection_on": hub.state.disinfection_on,
-            "ions_on": hub.state.ions_on,
-            "position": hub.state.position,
-            "motor_control_mode": hub.state.motor_control_mode,
-            "light_remaining_time": hub.state.light_remaining_time,
-            "drying_remaining_time": hub.state.drying_remaining_time,
-            "air_drying_remaining_time": hub.state.air_drying_remaining_time,
-            "ions_remaining_time": hub.state.ions_remaining_time,
-            "disinfection_remaining_time": hub.state.disinfection_remaining_time,
-        },
-        "runtime": {
-            "descent_time": hub.descent_time,
-            "token_expired": hub.token_expired,
-            "token_permanently_invalid": hub.token_permanently_invalid,
-            "last_error": hub.last_error,
-            "user_id": hub.user_id,
-            "iot_id": hub.iot_id,
-        },
+        "devices": [],
     }
 
-    # Optionally include registered entities
+    for hub in _entry_hubs(hass, entry):
+        data["devices"].append(
+            {
+                "iot_id": hub.iot_id,
+                "name": hub.name,
+                "device_state": _device_state(hub),
+                "runtime": _runtime(hub),
+            }
+        )
+
     ent_reg = er.async_get(hass)
-    entities = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
     data["entities"] = [
         {
             "entity_id": e.entity_id,
@@ -71,13 +103,11 @@ async def async_get_config_entry_diagnostics(
             "disabled_by": str(e.disabled_by),
             "hidden_by": str(e.hidden_by),
         }
-        for e in entities
+        for e in er.async_entries_for_config_entry(ent_reg, entry.entry_id)
     ]
 
-    # Optionally include device info
     dev_reg = dr.async_get(hass)
-    devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
-    data["devices"] = [
+    data["devices_registry"] = [
         {
             "id": d.id,
             "name": d.name,
@@ -85,14 +115,7 @@ async def async_get_config_entry_diagnostics(
             "manufacturer": d.manufacturer,
             "sw_version": d.sw_version,
         }
-        for d in devices
+        for d in dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
     ]
 
     return data
-
-
-def _truncate_token(value: str, max_len: int = 40) -> str:
-    """Truncate a token value for safe diagnostic display."""
-    if isinstance(value, str) and len(value) > max_len:
-        return value[:max_len] + "..."
-    return value

@@ -10,7 +10,7 @@ from homeassistant.const import UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .hub import HotataHub
+from .hub import HotataAccount, HotataHub
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,8 +21,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the number platform."""
-    hub: HotataHub = hass.data["hotata_airer"][entry.entry_id]
-    async_add_entities([DescentTimeNumber(hub)])
+    account: HotataAccount = hass.data["hotata_airer"][entry.entry_id]
+    async_add_entities(
+        [DescentTimeNumber(hub) for hub in account.device_hubs.values()]
+    )
 
 
 class DescentTimeNumber(NumberEntity):

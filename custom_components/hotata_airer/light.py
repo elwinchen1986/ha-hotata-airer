@@ -16,7 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util.color import brightness_to_value, value_to_brightness
 
-from .hub import HotataHub
+from .hub import HotataAccount, HotataHub
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,8 +27,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the light platform."""
-    hub: HotataHub = hass.data["hotata_airer"][entry.entry_id]
-    async_add_entities([HotataLight(hub)])
+    account: HotataAccount = hass.data["hotata_airer"][entry.entry_id]
+    async_add_entities(
+        [HotataLight(hub) for hub in account.device_hubs.values()]
+    )
 
 
 class HotataLight(LightEntity):

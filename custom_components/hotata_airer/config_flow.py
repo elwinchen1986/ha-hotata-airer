@@ -1,4 +1,13 @@
-"""Config flow for Hotata Airer Simple integration."""
+"""Config flow for Hotata Airer integration (single account entry, device list).
+
+Xiaomi-style model: one config entry is created per Hotata account. The refresh
+token is entered exactly once and stored in ``entry.data``. Every physical
+airer under that account is a record in ``entry.data["devices"]`` — there are
+**no config subentries**. Adding another device later (or renewing an expired
+token) is handled by the reconfigure flow, which re-fetches the account's
+device list and merges in any new device; the token is never asked for again
+unless it has actually expired.
+"""
 
 from __future__ import annotations
 
@@ -8,14 +17,13 @@ import time
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import httpx_client
 
 from .const import (
     API_DEVICE_LIST,
-    API_PROPERTY_GET,
     API_REFRESH_TOKEN,
     APP_KEY,
     APP_SECRET,
@@ -23,6 +31,7 @@ from .const import (
     CONF_ACCESS_TOKEN,
     CONF_DESCENT_TIME,
     CONF_IOT_ID,
+    CONF_NAME,
     CONF_REFRESH_TOKEN,
     CONF_USER_ID,
     DEFAULT_DESCENT_TIME,
@@ -32,7 +41,6 @@ from .const import (
     PHONE_MODEL,
     SYS_VERSION,
 )
-from .hub import HotataHub
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,13 +61,16 @@ def generate_sign(payload: dict[str, Any]) -> str:
     return hashlib.md5(raw.encode("utf8")).hexdigest()
 
 
-async def _init_from_refresh_token(
+async def _auth_with_refresh_token(
     hass: HomeAssistant,
     refresh_token: str,
 ) -> dict[str, Any] | None:
-    """Initialize credentials from Refresh Token only."""
+    """Exchange a refresh token for account credentials.
+
+    Returns a dict with CONF_ACCESS_TOKEN / CONF_REFRESH_TOKEN / CONF_USER_ID,
+    or None if authentication failed.
+    """
     async with httpx_client.get_async_client(hass) as client:
-        # Step 1: Refresh token
         ts = int(time.time() * 1000)
         refresh_payload = {
             "refreshToken": refresh_token,
@@ -78,8 +89,6 @@ async def _init_from_refresh_token(
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         }
 
-        _LOGGER.debug("Refresh token request payload: %s", refresh_payload)
-
         try:
             resp = await client.post(
                 API_REFRESH_TOKEN,
@@ -87,16 +96,15 @@ async def _init_from_refresh_token(
                 headers=headers,
                 timeout=10,
             )
-            _LOGGER.debug("Refresh token response status: %s", resp.status_code)
-            _LOGGER.debug("Refresh token response text: %s", resp.text[:500])
-
             try:
                 data = resp.json()
             except Exception as json_err:
-                _LOGGER.error("Failed to parse JSON response: %s. Response: %s", json_err, resp.text[:500])
+                _LOGGER.error(
+                    "Failed to parse JSON response: %s. Response: %s",
+                    json_err,
+                    resp.text[:500],
+                )
                 return None
-
-            _LOGGER.debug("Refresh token response: %s", data)
 
             if data.get("code") != "000":
                 _LOGGER.error("Refresh token failed with code: %s", data.get("code"))
@@ -112,110 +120,14 @@ async def _init_from_refresh_token(
             access_token = f"{token_type} {d.get('accessToken')}"
             new_refresh_token = d.get("refreshToken") or refresh_token
 
-            _LOGGER.debug("Got user_id=%s, access_token=%s...", user_id, access_token[:20])
-
+            return {
+                CONF_ACCESS_TOKEN: access_token,
+                CONF_REFRESH_TOKEN: new_refresh_token,
+                CONF_USER_ID: user_id,
+            }
         except Exception as e:
             _LOGGER.exception("Refresh token request error: %s", e)
             return None
-
-        # Step 2: Get device list
-        ts = int(time.time() * 1000)
-        list_payload = {
-            "userid": user_id,
-            "userId": user_id,
-            "appKey": APP_KEY,
-            "appVersion": APP_VERSION,
-            "timestamp": ts,
-            "traceId": f"ha_list_{ts}",
-            "sysVersion": SYS_VERSION,
-            "phoneModel": PHONE_MODEL,
-            "imei": IMEI,
-        }
-        list_payload["sign"] = generate_sign(list_payload)
-
-        try:
-            resp = await client.post(
-                API_DEVICE_LIST,
-                json=list_payload,
-                headers={
-                    "content-type": "application/json",
-                    "authorization": access_token,
-                    "User-Agent": headers["User-Agent"],
-                },
-                timeout=10,
-            )
-            list_data = resp.json()
-            _LOGGER.debug("Device list response: %s", list_data)
-
-            if list_data.get("code") != "000":
-                _LOGGER.error("Get device list failed: %s", list_data)
-                return None
-
-            devices = list_data.get("data", [])
-            if not devices:
-                _LOGGER.error("No devices found")
-                return None
-
-            # Return tokens + first device
-            device = devices[0]
-            iot_id = device.get("iotid") or device.get("iotId")
-            if not iot_id:
-                _LOGGER.error("No iotId in first device: %s", device)
-                return None
-
-        except Exception as e:
-            _LOGGER.exception("Device list request error: %s", e)
-            return None
-
-        # Step 3: Verify
-        ts = int(time.time() * 1000)
-        prop_payload = {
-            "userid": user_id,
-            "userId": user_id,
-            "iotId": iot_id,
-            "appKey": APP_KEY,
-            "appVersion": APP_VERSION,
-            "timestamp": ts,
-            "traceId": f"ha_prop_{ts}",
-            "sysVersion": SYS_VERSION,
-            "phoneModel": PHONE_MODEL,
-            "imei": IMEI,
-        }
-        prop_payload["sign"] = generate_sign(prop_payload)
-
-        try:
-            resp = await client.post(
-                API_PROPERTY_GET,
-                json=prop_payload,
-                headers={
-                    "content-type": "application/json",
-                    "authorization": access_token,
-                    "User-Agent": headers["User-Agent"],
-                },
-                timeout=10,
-            )
-            prop_data = resp.json()
-            _LOGGER.debug("Property get response: %s", prop_data)
-
-            if prop_data.get("code") != "000":
-                _LOGGER.error("Property get failed: %s", prop_data)
-                return None
-
-        except Exception as e:
-            _LOGGER.exception("Property get error: %s", e)
-            return None
-
-        return {
-            CONF_ACCESS_TOKEN: access_token,
-            CONF_REFRESH_TOKEN: new_refresh_token,
-            CONF_USER_ID: user_id,
-            CONF_IOT_ID: iot_id,
-            "mac": device.get("devicename", ""),
-            "productname": device.get("productname", ""),
-            "devicetype": device.get("devicetype", 0),
-            "devicenickname": device.get("devicenickname", ""),
-            "productkey": device.get("productkey", ""),
-        }
 
 
 async def _get_device_list(
@@ -223,7 +135,7 @@ async def _get_device_list(
     access_token: str,
     user_id: str,
 ) -> list[dict[str, Any]]:
-    """Fetch device list from API."""
+    """Fetch the device list for an account."""
     ts = int(time.time() * 1000)
     payload = {
         "userid": user_id,
@@ -256,122 +168,95 @@ async def _get_device_list(
             return []
 
 
-class HotataAirerSimpleConfigFlow(ConfigFlow, domain=DOMAIN):
-    VERSION = 1
+def _device_metadata(device: dict[str, Any], descent_time: int) -> dict[str, Any]:
+    """Extract persistent device metadata used by the device hub / registry."""
+    iot_id = device.get("iotid") or device.get("iotId")
+    name = (
+        device.get("deviceNickName")
+        or device.get("devicenickname")
+        or device.get("deviceName")
+        or DEFAULT_NAME
+    )
+    return {
+        CONF_IOT_ID: iot_id,
+        CONF_NAME: name,
+        "mac": device.get("devicename", ""),
+        "productname": device.get("productname", ""),
+        "devicetype": device.get("devicetype", 0),
+        "devicenickname": device.get("devicenickname", ""),
+        "productkey": device.get("productkey", ""),
+        CONF_DESCENT_TIME: descent_time,
+    }
 
-    @staticmethod
-    def async_get_options_flow(config_entry):
-        """Get the options flow for this handler."""
-        return HotataAirerOptionsFlowHandler(config_entry)
 
-    async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Reconfigure: update refreshToken when it expires."""
-        entry = self._get_reconfigure_entry()
-        errors: dict[str, str] = {}
+def _merge_devices(
+    existing: list[dict[str, Any]], fetched: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Merge freshly-fetched devices into the existing record list.
 
-        if user_input is not None:
-            credentials = await _init_from_refresh_token(
-                self.hass,
-                user_input[CONF_REFRESH_TOKEN],
-            )
-            if credentials is not None:
-                _LOGGER.debug(
-                    "Reconfigure success. New access_token=%s..., user_id=%s, iot_id=%s",
-                    credentials[CONF_ACCESS_TOKEN][:20],
-                    credentials.get(CONF_USER_ID, "N/A"),
-                    credentials.get(CONF_IOT_ID, "N/A"),
-                )
-                return self.async_update_reload_and_abort(
-                    entry,
-                    data_updates={
-                        **credentials,
-                        CONF_NAME: entry.data.get(CONF_NAME, DEFAULT_NAME),
-                    },
-                )
-            errors["base"] = "invalid_token"
+    Existing records (keyed by iotId) are preserved so any per-device config
+    such as ``descent_time`` survives a reconfigure.
+    """
+    by_iot: dict[str, dict[str, Any]] = {
+        d[CONF_IOT_ID]: d for d in existing if d.get(CONF_IOT_ID)
+    }
+    for dev in fetched:
+        iot_id = dev.get("iotid") or dev.get("iotId")
+        if not iot_id or iot_id in by_iot:
+            continue
+        by_iot[iot_id] = dev
+    return list(by_iot.values())
 
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_REFRESH_TOKEN,
-                    default=entry.data.get(CONF_REFRESH_TOKEN, ""),
-                ): str,
-            }
-        )
 
-        return self.async_show_form(
-            step_id="reconfigure",
-            data_schema=schema,
-            errors=errors,
-            description_placeholders={
-                "hint": "输入新的 refreshToken（从Hotata智家微信小程序获取）",
-            },
-        )
+class HotataAirerConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Handle the Hotata Airer config flow.
+
+    One account entry is created per Hotata account (the refresh token is
+    entered exactly once). Each physical airer becomes a device record inside
+    the account entry's data — adding another device later never asks for the
+    token again.
+    """
+
+    VERSION = 2
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        """Step 1: authenticate the account (refresh token entered ONCE)."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            credentials = await _init_from_refresh_token(
-                self.hass,
-                user_input[CONF_REFRESH_TOKEN],
+            creds = await _auth_with_refresh_token(
+                self.hass, user_input[CONF_REFRESH_TOKEN]
             )
-
-            if credentials is not None:
-                # Store for potential multi-device flow
-                self._auth_data = credentials
-                self._descent_time = user_input.get(CONF_DESCENT_TIME, DEFAULT_DESCENT_TIME)
-
-                # Get device list for uniqueness check
+            if creds is None:
+                errors["base"] = "invalid_auth"
+            else:
                 devices = await _get_device_list(
-                    self.hass,
-                    credentials[CONF_ACCESS_TOKEN],
-                    credentials[CONF_USER_ID],
+                    self.hass, creds[CONF_ACCESS_TOKEN], creds[CONF_USER_ID]
                 )
-
-                # Find devices not yet configured
-                existing_ids = {
-                    e.data.get(CONF_IOT_ID)
-                    for e in self._async_current_entries()
-                }
-                unconfigured = [
-                    d for d in devices
-                    if (d.get("iotid") or d.get("iotId")) not in existing_ids
+                descent_time = int(
+                    user_input.get(CONF_DESCENT_TIME, DEFAULT_DESCENT_TIME)
+                )
+                device_records = [
+                    _device_metadata(d, descent_time)
+                    for d in devices
+                    if (d.get("iotid") or d.get("iotId"))
                 ]
-
-                if len(unconfigured) > 1:
-                    # Multiple devices available → let user pick
-                    self._all_devices = devices
-                    return await self.async_step_pick_device()
-
-                # Single (or first) device → create entry directly
-                target = unconfigured[0] if unconfigured else devices[0]
-                iot_id = target.get("iotid") or target.get("iotId")
-                device_name = (
-                    target.get("deviceNickName")
-                    or target.get("devicenickname")
-                    or target.get("deviceName")
-                    or "好太太晾衣机"
-                )
-
-                await self.async_set_unique_id(iot_id)
-                self._abort_if_unique_id_configured()
-
-                return self.async_create_entry(
-                    title=device_name,
-                    data={
-                        **credentials,
-                        CONF_IOT_ID: iot_id,
-                        CONF_NAME: device_name,
-                        CONF_DESCENT_TIME: self._descent_time,
-                    },
-                )
-
-            errors["base"] = "invalid_auth"
+                if not device_records:
+                    errors["base"] = "no_devices"
+                else:
+                    await self.async_set_unique_id(creds[CONF_USER_ID])
+                    self._abort_if_unique_id_configured()
+                    return self.async_create_entry(
+                        title=f"Hotata 账号 ({creds[CONF_USER_ID]})",
+                        data={
+                            CONF_ACCESS_TOKEN: creds[CONF_ACCESS_TOKEN],
+                            CONF_REFRESH_TOKEN: creds[CONF_REFRESH_TOKEN],
+                            CONF_USER_ID: creds[CONF_USER_ID],
+                            "devices": device_records,
+                        },
+                    )
 
         schema = vol.Schema(
             {
@@ -386,107 +271,73 @@ class HotataAirerSimpleConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=schema,
             errors=errors,
-        )
-
-    async def async_step_pick_device(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Step to select which device to add."""
-        existing_ids = {
-            e.data.get(CONF_IOT_ID)
-            for e in self._async_current_entries()
-        }
-
-        unconfigured = [
-            d for d in self._all_devices
-            if (d.get("iotid") or d.get("iotId")) not in existing_ids
-        ]
-
-        if not unconfigured:
-            return self.async_abort(reason="all_devices_configured")
-
-        if user_input is not None:
-            iot_id = user_input["iot_id"]
-            device = next(
-                d for d in self._all_devices
-                if (d.get("iotid") or d.get("iotId")) == iot_id
-            )
-            device_name = (
-                device.get("deviceNickName")
-                or device.get("devicenickname")
-                or device.get("deviceName")
-                or "好太太晾衣机"
-            )
-
-            await self.async_set_unique_id(iot_id)
-            self._abort_if_unique_id_configured()
-
-            return self.async_create_entry(
-                title=device_name,
-                data={
-                    **self._auth_data,
-                    CONF_IOT_ID: iot_id,
-                    CONF_NAME: device_name,
-                    CONF_DESCENT_TIME: self._descent_time,
-                },
-            )
-
-        options = {}
-        for d in unconfigured:
-            iot_id = d.get("iotid") or d.get("iotId") or ""
-            dname = d.get("deviceName") or d.get("name") or f"设备({iot_id[:8]})"
-            options[iot_id] = dname
-
-        schema = vol.Schema({
-            vol.Required("iot_id"): vol.In(options),
-        })
-
-        return self.async_show_form(
-            step_id="pick_device",
-            data_schema=schema,
             description_placeholders={
-                "count": str(len(options)),
+                "hint": "输入 refreshToken（从Hotata智家微信小程序获取）",
             },
         )
 
-
-class HotataAirerOptionsFlowHandler(OptionsFlow):
-    """Handle options flow for Hotata Airer."""
-
-    def __init__(self, config_entry) -> None:
-        """Initialize options flow."""
-        self._config_entry = config_entry
-
-    async def async_step_init(
+    async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Manage the options."""
+        """Reconfigure: renew an expired token and/or pull in new devices.
+
+        If the stored token is still valid we silently re-fetch the account's
+        device list and merge in any new device, then reload — no prompt. Only
+        when the token has actually expired do we ask the user to paste a new
+        refresh token.
+        """
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+
         if user_input is not None:
-            # Sync descent_time to hub's runtime store
-            descent_time = user_input.get(CONF_DESCENT_TIME, DEFAULT_DESCENT_TIME)
-            hub: HotataHub = self.hass.data[DOMAIN].get(
-                self._config_entry.entry_id
+            creds = await _auth_with_refresh_token(
+                self.hass, user_input[CONF_REFRESH_TOKEN]
             )
-            if hub:
-                await hub.async_set_descent_time(descent_time)
-            return self.async_create_entry(title="", data=user_input)
+            if creds is None:
+                errors["base"] = "invalid_token"
+            else:
+                fetched = await _get_device_list(
+                    self.hass, creds[CONF_ACCESS_TOKEN], creds[CONF_USER_ID]
+                )
+                merged = _merge_devices(entry.data.get("devices", []), fetched)
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={
+                        CONF_ACCESS_TOKEN: creds[CONF_ACCESS_TOKEN],
+                        CONF_REFRESH_TOKEN: creds[CONF_REFRESH_TOKEN],
+                        "devices": merged,
+                    },
+                )
 
-        current = DEFAULT_DESCENT_TIME
-        hub: HotataHub = self.hass.data[DOMAIN].get(
-            self._config_entry.entry_id
+        # Silent path: try the existing token first; merge any new device.
+        existing = entry.data.get("devices", [])
+        silent = await _get_device_list(
+            self.hass, entry.data[CONF_ACCESS_TOKEN], entry.data[CONF_USER_ID]
         )
-        if hub:
-            current = hub.descent_time
+        if silent:
+            merged = _merge_devices(existing, silent)
+            if merged != existing:
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={"devices": merged},
+                )
+            # Token still valid and no new device — nothing to do.
+            return self.async_abort(reason="no_changes")
 
+        # Token expired (or list fetch failed): ask for a fresh refresh token.
         schema = vol.Schema(
             {
                 vol.Required(
-                    CONF_DESCENT_TIME, default=current
-                ): vol.All(vol.Coerce(int), vol.Range(min=0, max=20)),
+                    CONF_REFRESH_TOKEN,
+                    default=entry.data.get(CONF_REFRESH_TOKEN, ""),
+                ): str,
             }
         )
-
         return self.async_show_form(
-            step_id="init",
+            step_id="reconfigure",
             data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "hint": "refreshToken 已过期，请输入新的（从Hotata智家微信小程序获取）",
+            },
         )
