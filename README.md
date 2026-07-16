@@ -162,6 +162,7 @@ cp -r custom_components/hotata_airer /path/to/your/ha/config/custom_components/
 | 版本 | 说明 |
 |------|------|
 | **v2.3.0** | **重大重构**：采用小米式单账号模型——refreshToken 仅输入一次、自动拉取云端设备列表、一账号多设备共享 token。新增自动发现新设备 + 新设备通知 + token 过期通知功能 |
+| **v2.3.2** | 修复卸载失败 bug（async_forward_entry_unloads 不存在的方法名） |
 | **v2.2.0** | **两大重磅更新**：多设备支持（可添加多台晾衣机）+ 下降时长设置（可配置模拟位置精度）。另新增 button 重置位置、诊断支持、选项配置、完善翻译 |
 | **v2.1.1** | 修复 Token 刷新机制，兼容 HA 2026 |
 | **v2.1.0** | 同步本地最新版本，优化 Token 刷新机制 |
