@@ -19,6 +19,7 @@ Platforms are wired once per account entry via
 ``account.device_hubs`` and creates one entity per device.
 """
 
+import asyncio
 import logging
 
 from homeassistant.config_entries import ConfigEntry
@@ -112,4 +113,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     account.stop_scheduled_refresh()
     for hub in account.device_hubs.values():
         hub.stop_polling()
-    return await hass.config_entries.async_forward_entry_unloads(entry, PLATFORMS)
+    return all(
+        await asyncio.gather(
+            *[
+                hass.config_entries.async_forward_entry_unload(entry, platform)
+                for platform in PLATFORMS
+            ]
+        )
+    )
