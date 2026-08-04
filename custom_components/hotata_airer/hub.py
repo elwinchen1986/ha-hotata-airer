@@ -12,10 +12,10 @@ many devices are connected.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import time
+import uuid
 
 import httpx
 from dataclasses import dataclass, field
@@ -28,9 +28,9 @@ from homeassistant.helpers import httpx_client
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 
-from .config_flow import _get_device_list, _merge_devices
 from .const import (
     API_INVOKE2,
+    API_LOGIN_PASSWORD,
     API_ONLINE_STATUS,
     API_PROPERTY_GET,
     API_PROPERTY_SET,
@@ -42,35 +42,21 @@ from .const import (
     CONF_DESCENT_TIME,
     CONF_IOT_ID,
     CONF_NAME,
+    CONF_PASSWORD,
     CONF_REFRESH_TOKEN,
     CONF_USER_ID,
+    CONF_USERNAME,
     DEFAULT_DESCENT_TIME,
     DEFAULT_NAME,
+    DOMAIN,
     IMEI,
     PHONE_MODEL,
     POLL_INTERVAL,
     SYS_VERSION,
 )
+from .util import build_login_body, encrypt_password, generate_sign
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def generate_sign(payload: dict[str, Any]) -> str:
-    """Generate MD5 signature for API request."""
-    p = payload.copy()
-    p.pop("sign", None)
-
-    arr = []
-    for k in sorted(p.keys()):
-        v = p[k]
-        if v is None or v == "":
-            continue
-        if isinstance(v, (dict, list)):
-            continue
-        arr.append(f"{k}={v}")
-
-    raw = "&".join(arr) + APP_SECRET
-    return hashlib.md5(raw.encode("utf8")).hexdigest()
 
 
 def build_base_payload(user_id: str, iot_id: str | None = None) -> dict[str, Any]:
@@ -133,9 +119,11 @@ class HotataAccount:
         """Initialize the account from the main config entry data."""
         self.hass = hass
         self.entry = entry
-        self.user_id: str = entry.data[CONF_USER_ID]
-        self._access_token: str = entry.data[CONF_ACCESS_TOKEN]
-        self._refresh_token: str = entry.data[CONF_REFRESH_TOKEN]
+        self.user_id: str = entry.data.get(CONF_USER_ID, "")
+        self._access_token: str = entry.data.get(CONF_ACCESS_TOKEN, "")
+        self._refresh_token: str = entry.data.get(CONF_REFRESH_TOKEN, "")
+        self._username: str = entry.data.get(CONF_USERNAME, "")
+        self._password: str = entry.data.get(CONF_PASSWORD, "")
         self._expire_at: float = 0
 
         self._token_expired: bool = False
@@ -292,15 +280,14 @@ class HotataAccount:
                 else:
                     code = data.get("code", "")
                     msg = data.get("message", "")
-                    # 1073 = login expired, token permanently invalid
+                    # 1073 = login expired, try re-login with username/password
                     if code == "1073":
-                        self._last_error = (
-                            f"Login expired, please re-configure refreshToken (code={code})"
+                        _LOGGER.warning(
+                            "Refresh token expired (code=1073), "
+                            "attempting re-login with username/password"
                         )
-                        _LOGGER.error(
-                            "Refresh token has expired (code=1073). "
-                            "User must re-authenticate via config flow."
-                        )
+                        if await self.async_login():
+                            return True
                         self._token_permanently_invalid = True
                         await self._notify_token_expired()
                     elif code == "403":
@@ -317,6 +304,47 @@ class HotataAccount:
         finally:
             self._refresh_in_progress = False
 
+    async def async_login(self) -> bool:
+        """Login with username/password to get fresh tokens."""
+        if not self._username or not self._password:
+            _LOGGER.warning("No username/password stored, cannot re-login")
+            return False
+        try:
+            async with httpx_client.get_async_client(self.hass) as client:
+                body = build_login_body({
+                    "username": self._username,
+                    "registeredId": str(uuid.uuid4()),
+                    "password": encrypt_password(self._password),
+                })
+                resp = await client.post(
+                    API_LOGIN_PASSWORD,
+                    json=body,
+                    headers={"content-type": "application/json"},
+                    timeout=15,
+                )
+                data = resp.json()
+                if data.get("code") != "000":
+                    _LOGGER.error("Login failed: code=%s, msg=%s", data.get("code"), data.get("message"))
+                    return False
+                d = data.get("data", {})
+                token_type = d.get("tokenType", "bearer").strip()
+                self._access_token = f"{token_type} {d['accessToken']}"
+                if d.get("refreshToken"):
+                    self._refresh_token = d["refreshToken"]
+                self.user_id = d.get("userId", self.user_id)
+                expires_in = int(d.get("expiresIn", 2591999))
+                self._expire_at = time.time() + expires_in
+                self._persist_tokens()
+                self._token_expired = False
+                self._token_permanently_invalid = False
+                self._token_expiry_notified = False
+                self._last_error = ""
+                _LOGGER.info("Login successful, tokens updated")
+                return True
+        except Exception as err:
+            _LOGGER.warning("Login error: %s", err)
+            return False
+
     async def _check_new_devices(self) -> None:
         """Silently pull the account device list and auto-add any new airer.
 
@@ -330,6 +358,7 @@ class HotataAccount:
         if not await self.ensure_token_valid():
             return
         try:
+            from .config_flow import _get_device_list, _merge_devices
             fetched = await _get_device_list(
                 self.hass, self._access_token, self.user_id
             )
@@ -358,14 +387,15 @@ class HotataAccount:
     ) -> None:
         """Notify the user that new airers were auto-added."""
         names = ", ".join(d.get(CONF_NAME, DEFAULT_NAME) for d in new_devices)
+        entry_id = self.entry.entry_id
         try:
             self.hass.components.persistent_notification.async_create(
                 message=(
-                    f"Auto-discovered and added {len(new_devices)} new airer(s): {names}. "
-                    "No reconfiguration needed, refresh the page to see the new devices."
+                    f"Auto-discovered and added {len(new_devices)} new airer(s): {names}.\n\n"
+                    "No reconfiguration required — reload the page to see the new devices."
                 ),
-                title="Hotata Airer · New Devices Added",
-                notification_id=f"hotata_new_devices_{self.entry.entry_id}",
+                title="Hotata Airer – New devices added",
+                notification_id=f"hotata_new_devices_{entry_id}",
             )
         except Exception as err:
             _LOGGER.warning("Failed to send new-device notification: %s", err)
@@ -375,16 +405,16 @@ class HotataAccount:
         if self._token_expiry_notified:
             return
         self._token_expiry_notified = True
+        entry_id = self.entry.entry_id
         try:
             self.hass.components.persistent_notification.async_create(
                 message=(
-                    "Hotata Airer login has expired (refreshToken is invalid), "
-                    "device updates have stopped. "
-                    "Go to Settings → Devices & Services → Hotata Airer → Configure → Reconfigure, "
-                    "and paste a new refreshToken (from the Hotata WeChat mini-program)."
+                    "Hotata Airer login has expired and device updates have stopped.\n\n"
+                    "Go to **Settings → Devices & Services → Hotata Airer → Configure → Reconfigure** "
+                    "and re-enter your username and password."
                 ),
-                title="Hotata Airer · Token Expired",
-                notification_id=f"hotata_token_expired_{self.entry.entry_id}",
+                title="Hotata Airer – Authentication expired",
+                notification_id=f"hotata_token_expired_{entry_id}",
             )
         except Exception as err:
             _LOGGER.warning("Failed to send token-expired notification: %s", err)
@@ -493,29 +523,27 @@ class HotataHub:
     @property
     def device_info(self) -> dict[str, Any]:
         """Return device info for HA device registry."""
-        info = {
-            "identifiers": {("hotata_airer", self.iot_id)},
+        info: dict[str, Any] = {
+            "identifiers": {(DOMAIN, self.iot_id)},
             "name": self.name,
-            "manufacturer": "Hotata (好太太)",
+            "manufacturer": "Hotata",
         }
-        # Model: productname + devicetype
-        model_parts = []
+        model_parts: list[str] = []
         if self._device_data.get("productname"):
-            model_parts.append(self._device_data["productname"])
+            model_parts.append(str(self._device_data["productname"]))
         dtype = self._device_data.get("devicetype")
         if dtype:
             model_parts.append(f"({dtype})")
         info["model"] = " ".join(model_parts) if model_parts else "Smart Airer"
         mac_raw = self._device_data.get("mac")
         if mac_raw:
-            mac = mac_raw.replace(":", "").lower()
-            # Only treat as a MAC connection if it is exactly 12 hex chars.
+            mac = str(mac_raw).replace(":", "").lower()
             if len(mac) == 12 and all(c in "0123456789abcdef" for c in mac):
                 info["connections"] = {
                     ("mac", ":".join(mac[i : i + 2] for i in range(0, 12, 2)))
                 }
         if self._device_data.get("devicenickname"):
-            info["model"] = self._device_data["devicenickname"]
+            info["model"] = str(self._device_data["devicenickname"])
         return info
 
     @property

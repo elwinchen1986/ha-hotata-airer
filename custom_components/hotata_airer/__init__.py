@@ -87,16 +87,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Upgrade legacy entries to the current schema version.
 
-    Pre-2.4 single-device entries stored the device inline (token + iot_id at
-    the top level of ``entry.data``). The runtime handles that shape
-    transparently in :func:`async_setup_entry` via :func:`_normalize_devices`,
-    so no data transformation is needed — we only bump the version marker.
-    There is deliberately no prompt and no forced re-install: single-device
-    users upgrade seamlessly. Multi-device 2.2 setups never worked and are out
-    of scope; affected users re-add the account.
+    v1→v2: single-device entries normalized (no data change needed).
+    v2→v3: username/password login added; old entries keep working with
+           their existing refreshToken until it expires, then the user
+           reconfigures with username/password.
     """
     if entry.version < 2:
         hass.config_entries.async_update_entry(entry, version=2)
+    if entry.version < 3:
+        # v3 adds CONF_USERNAME/CONF_PASSWORD for password-based login.
+        # Old entries don't have these; they'll continue using refreshToken
+        # until it expires, then prompt for reconfiguration.
+        hass.config_entries.async_update_entry(entry, version=3)
     return True
 
 

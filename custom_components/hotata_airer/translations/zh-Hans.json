@@ -4,42 +4,36 @@
   "config": {
     "step": {
       "user": {
-        "title": "好太太晾衣机",
-        "description": "请输入从Hotata智家小程序抓包获取的 refreshToken。该账号下的所有晾衣机将一次性添加，refreshToken 只需输入这一次。",
+        "title": "连接好太太账号",
+        "description": "请输入好太太智联 App 的账号和密码。系统会自动发现并添加该账号下的所有晾衣机，之后无需再次输入凭证。",
         "data": {
-          "refresh_token": "刷新令牌",
-          "descent_time": "下降时长（秒），0=禁用模拟，使用设备自带位置"
+          "username": "用户名（手机号）",
+          "password": "密码",
+          "descent_time": "下降时长（秒），0=禁用模拟位置，使用设备自带位置"
         }
       },
-      "subentry_user": {
-        "title": "添加晾衣机",
-        "description": "共发现 {count} 台尚未添加的设备，请选择要添加的（无需再次输入 refreshToken）。",
+      "reconfigure": {
+        "title": "重新登录好太太账号",
+        "description": "更新好太太智联 App 的登录凭证（例如修改了密码）。系统会自动重新登录并刷新设备列表。",
         "data": {
-          "iot_id": "设备"
+          "username": "用户名（手机号）",
+          "password": "密码"
         }
       }
     },
     "error": {
-      "invalid_auth": "refreshToken 无效或认证失败。",
-      "invalid_token": "refreshToken 无效，请检查后重试。",
-      "no_devices": "该账号下未发现任何设备。"
-    },
-    "reconfigure": {
-      "title": "更新 Refresh Token",
-      "description": "输入新的 refreshToken（从Hotata智家微信小程序获取）。",
-      "data": {
-        "refreshToken": "刷新令牌"
-      }
+      "invalid_auth": "用户名或密码错误，请检查后重试。",
+      "no_devices": "该账号下未发现任何晾衣机设备。"
     },
     "abort": {
-      "all_devices_configured": "所有设备已添加完毕。",
-      "no_account": "未找到已配置的账号。"
+      "no_changes": "没有任何变更，已取消。",
+      "already_configured": "该账号已经配置过了。"
     }
   },
   "entity": {
     "cover": {
       "cover": {
-        "name": "晾衣机"
+        "name": "晾衣杆"
       }
     },
     "light": {
@@ -69,32 +63,35 @@
         "name": "位置"
       },
       "light_remaining_time": {
-        "name": "灯光定时"
+        "name": "照明剩余时间"
       },
       "drying_remaining_time": {
-        "name": "烘干定时"
+        "name": "烘干剩余时间"
       },
       "air_drying_remaining_time": {
-        "name": "风干定时"
+        "name": "风干剩余时间"
       },
       "disinfection_remaining_time": {
-        "name": "消毒定时"
+        "name": "消毒剩余时间"
       },
       "ions_remaining_time": {
-        "name": "负离子定时"
+        "name": "负离子剩余时间"
       },
       "motor_control_mode": {
         "name": "电机状态",
         "state": {
           "0": "停止",
-          "1": "上升",
-          "2": "下降"
+          "1": "上升中",
+          "2": "下降中"
         }
       },
       "error_state": {
         "name": "集成状态",
         "state": {
-          "normal": "正常"
+          "normal": "正常",
+          "auth_expired": "登录已失效",
+          "too_many_requests": "请求过于频繁",
+          "server_error": "服务端异常"
         }
       }
     },
@@ -103,7 +100,7 @@
         "name": "在线状态"
       },
       "power": {
-        "name": "电源开关"
+        "name": "电源状态"
       }
     }
   },

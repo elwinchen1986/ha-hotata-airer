@@ -3,7 +3,7 @@
 [![GitHub Release](https://img.shields.io/github/v/release/C3H3-AI/ha-hotata-airer?style=flat-square)](https://github.com/C3H3-AI/ha-hotata-airer/releases)
 [![GitHub Downloads](https://img.shields.io/github/downloads/C3H3-AI/ha-hotata-airer/total?style=flat-square)](https://github.com/C3H3-AI/ha-hotata-airer/releases)
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5?style=flat-square)](https://github.com/hacs/integration)
-[![HA Version](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-blue?style=flat-square)](https://www.home-assistant.io/)
+[![HA Version](https://img.shields.io/badge/Home%20Assistant-2024.12%2B-blue?style=flat-square)](https://www.home-assistant.io/)
 [![License](https://img.shields.io/badge/license-CC%20BY--NC%204.0-green?style=flat-square)](LICENSE)
 
 Home Assistant 自定义集成，支持好太太智能晾衣机的完整控制。
@@ -21,7 +21,8 @@ Home Assistant 自定义集成，支持好太太智能晾衣机的完整控制�
 | 在线状态 | binary_sensor 实体，设备连接状态 |
 | 下降时长配置 | number 实体，配置全程下降时间 |
 | 位置重置 | button 实体，校准模拟位置 |
-| 自动 Token 刷新 | 无需手动干预，长期稳定运行 |
+| 自动 Token 刷新 | 双层保障：refreshToken 定期刷新 + 失效后自动用账号密码重登录 |
+| 用户名密码登录 | v3.0 新增，无需再从小程序抓包获取 refreshToken |
 | 多设备支持 | 可添加多台好太太晾衣机 |
 
 ---
@@ -58,17 +59,26 @@ cp -r custom_components/hotata_airer /path/to/your/ha/config/custom_components/
 
 1. **配置 → 设备与服务 → 添加集成**
 2. 搜索 **Hotata Airer**
-3. 填入从微信好太太小程序网络请求中获取的 **refreshToken**
+3. 输入好太太智联 App 的**账号（手机号）和密码**
 
 ### 配置参数
 
 | 参数 | 说明 |
 |------|------|
-| refreshToken | 必填，从微信好太太小程序网络请求中获取 |
-| 设备名称 | 可选，设备显示名称 |
+| 用户名 | 必填，好太太智联 App 注册手机号 |
+| 密码 | 必填，好太太智联 App 登录密码 |
 | 下降时长 | 可选，晾衣架从顶到底所需秒数（默认 10s） |
 
-> **提示**：只需提供 refreshToken，其他参数可后续在选项中修改。
+> **提示**：登录成功后自动发现该账号下所有晾衣机设备，无需手动输入设备信息。
+
+### Token 自动刷新机制
+
+集成采用双层保障，无需手动干预：
+
+1. **refreshToken 定期刷新**：每 6 小时自动用 refreshToken 换取新的 accessToken
+2. **自动重登录**：当 refreshToken 也失效时（如服务器侧过期），自动用保存的账号密码重新登录获取新 token
+
+仅在账号密码被修改导致重登录失败时，才会发送通知提醒你更新密码。
 
 ---
 
@@ -142,10 +152,11 @@ cp -r custom_components/hotata_airer /path/to/your/ha/config/custom_components/
 
 | 问题 | 解决方案 |
 |------|----------|
-| 实体不出现 | 重启 HA，检查 refreshToken 是否正确 |
-| 设备离线 | 检查网络连接，确认 token 未过期 |
+| 实体不出现 | 重启 HA，检查账号密码是否正确 |
+| 设备离线 | 检查网络连接，确认设备是否在线 |
 | 控制无响应 | 查看 HA 日志中的 `hotata_airer` 相关错误 |
-| Token 失效 | 重新配置集成，输入新的 refreshToken |
+| 登录失败 | 确认好太太智联 App 账号密码是否正确，可通过重新配置更新 |
+| 收到"登录已失效"通知 | 账号密码可能已修改，点击集成重新配置，输入新密码 |
 
 ## 💝 赞助
 
@@ -161,6 +172,7 @@ cp -r custom_components/hotata_airer /path/to/your/ha/config/custom_components/
 
 | 版本 | 说明 |
 |------|------|
+| **v3.0.0** | **重大升级**：支持用户名/密码直接登录（逆向好太太 App 登录协议，AES 加密 + RSA 签名），无需再从小程序抓包获取 refreshToken。新增 refreshToken 失效后自动重登录机制，双层保障 token 永久有效。支持从 v2 配置项自动迁移 |
 | **v2.3.0** | **重大重构**：采用小米式单账号模型——refreshToken 仅输入一次、自动拉取云端设备列表、一账号多设备共享 token。新增自动发现新设备 + 新设备通知 + token 过期通知功能 |
 | **v2.3.2** | 修复卸载失败 bug（async_forward_entry_unloads 不存在的方法名） |
 | **v2.2.0** | **两大重磅更新**：多设备支持（可添加多台晾衣机）+ 下降时长设置（可配置模拟位置精度）。另新增 button 重置位置、诊断支持、选项配置、完善翻译 |

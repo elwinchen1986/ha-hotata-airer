@@ -4,36 +4,30 @@
   "config": {
     "step": {
       "user": {
-        "title": "Hotata Airer",
-        "description": "Please enter the refresh token from the Hotata WeChat mini-program. All airers on this account are added at once; the refresh token is only needed this single time.",
+        "title": "Connect Hotata Account",
+        "description": "Enter your Hotata Smart Home app username and password. All airers linked to this account will be discovered and added automatically; no credentials are required after this step.",
         "data": {
-          "refresh_token": "Refresh Token",
-          "descent_time": "Full descent duration in seconds (0=disable simulation, use device position)"
+          "username": "Username (phone number)",
+          "password": "Password",
+          "descent_time": "Full descent duration in seconds (0 = disable simulation, use device position)"
         }
       },
-      "subentry_user": {
-        "title": "Add Airer",
-        "description": "{count} device(s) not yet added. Select one to add (no refresh token required).",
+      "reconfigure": {
+        "title": "Re-login to Hotata",
+        "description": "Update your Hotata Smart Home credentials (e.g. after changing your password). The integration will automatically re-login and refresh the device list.",
         "data": {
-          "iot_id": "Device"
+          "username": "Username (phone number)",
+          "password": "Password"
         }
       }
     },
     "error": {
-      "invalid_auth": "Invalid refresh token or authentication failed.",
-      "invalid_token": "The refresh token is invalid. Please check and try again.",
-      "no_devices": "No devices were found for this account."
-    },
-    "reconfigure": {
-      "title": "Update Refresh Token",
-      "description": "Enter a new refresh token from the Hotata WeChat mini-program.",
-      "data": {
-        "refreshToken": "Refresh Token"
-      }
+      "invalid_auth": "Invalid username or password. Please check and try again.",
+      "no_devices": "No airer devices were found under this account."
     },
     "abort": {
-      "all_devices_configured": "All devices have already been configured.",
-      "no_account": "No configured account was found."
+      "no_changes": "No changes were made, aborted.",
+      "already_configured": "This account has already been configured."
     }
   },
   "entity": {
@@ -61,7 +55,7 @@
         "name": "Disinfection"
       },
       "ions": {
-        "name": "Ions"
+        "name": "Negative Ions"
       }
     },
     "sensor": {
@@ -69,22 +63,22 @@
         "name": "Position"
       },
       "light_remaining_time": {
-        "name": "Light Timer"
+        "name": "Light Remaining"
       },
       "drying_remaining_time": {
-        "name": "Drying Timer"
+        "name": "Drying Remaining"
       },
       "air_drying_remaining_time": {
-        "name": "Air Drying Timer"
+        "name": "Air Drying Remaining"
       },
       "disinfection_remaining_time": {
-        "name": "Disinfection Timer"
+        "name": "Disinfection Remaining"
       },
       "ions_remaining_time": {
-        "name": "Ions Timer"
+        "name": "Ions Remaining"
       },
       "motor_control_mode": {
-        "name": "Motor Mode",
+        "name": "Motor State",
         "state": {
           "0": "Stopped",
           "1": "Rising",
@@ -92,9 +86,12 @@
         }
       },
       "error_state": {
-        "name": "Error State",
+        "name": "Integration Status",
         "state": {
-          "normal": "Normal"
+          "normal": "Normal",
+          "auth_expired": "Auth Expired",
+          "too_many_requests": "Too Many Requests",
+          "server_error": "Server Error"
         }
       }
     },
@@ -103,7 +100,7 @@
         "name": "Online Status"
       },
       "power": {
-        "name": "Power Switch"
+        "name": "Power State"
       }
     }
   },

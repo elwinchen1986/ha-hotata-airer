@@ -1,11 +1,11 @@
 {
   "domain": "hotata_airer",
   "name": "Hotata Airer",
-  "version": "2.3.2",
+  "version": "3.0.0",
   "homeassistant": "2024.12",
   "documentation": "https://github.com/C3H3-AI/ha-hotata-airer",
   "issue_tracker": "https://github.com/C3H3-AI/ha-hotata-airer/issues",
-  "requirements": [],
+  "requirements": ["cryptography>=42.0.0"],
   "codeowners": ["@C3H3-AI"],
   "iot_class": "cloud_polling",
   "integration_type": "device",
