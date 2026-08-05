@@ -40,15 +40,68 @@ from .util import build_login_body, encrypt_password, generate_sign
 _LOGGER = logging.getLogger(__name__)
 
 
+def _classify_login_error(code: str, message: str) -> tuple[str, str]:
+    """Map a server login error to a (error_key, user_facing_message) tuple.
+
+    error_key matches a key in the translations ``config.error`` section so
+    the config flow can render a localized message. The returned message is
+    the raw server text, surfaced to the user via description_placeholders
+    when no specific key fits.
+
+    Known Hotata API login error codes (discovered via live API testing):
+      1032 — 该手机号尚未注册 (phone number not registered)
+      1035 — 密码加密错误 (password encryption error / empty password)
+      1073 — login expired (refresh-token path)
+    """
+    msg = (message or "").strip()
+    code = (code or "").strip()
+
+    # 1032 = phone number not registered — the most common failure for users
+    # who don't realize the username must be the exact phone number registered
+    # in the Hotata app. Previously this was shown as "密码错误", misleading
+    # users into resetting their password when the real issue was the phone #.
+    if code == "1032":
+        return "phone_not_registered", msg or "该手机号尚未注册"
+
+    # 1035 = password encryption error — usually an empty or malformed password
+    if code == "1035":
+        return "invalid_auth", msg or "密码格式错误"
+
+    # 1073 = login expired (refresh-token path); shouldn't normally happen
+    # on a fresh password login, but handle it defensively.
+    if code == "1073":
+        return "auth_expired", msg or "登录已过期，请重新登录"
+
+    # Common risk-control / captcha signals returned by the Hotata API.
+    # The server message is the most reliable signal — codes are not documented.
+    msg_lower = msg.lower()
+    if any(k in msg for k in ("验证码", "图形验证", "滑块")) or "captcha" in msg_lower:
+        return "captcha_required", msg or "登录过于频繁，需要验证码，请稍后通过 App 登录后重试"
+    if any(k in msg for k in ("锁定", "冻结", "被封")) or "lock" in msg_lower:
+        return "account_locked", msg or "账号已被锁定，请联系客服或稍后重试"
+    if any(k in msg for k in ("频繁", "稍后", "稍后再试")) or "rate" in msg_lower:
+        return "rate_limited", msg or "操作过于频繁，请稍后再试"
+    if any(k in msg for k in ("密码错误", "密码不正确", "账号不存在", "用户不存在")):
+        return "invalid_auth", msg or "用户名或密码错误"
+
+    # Fallback: surface the raw server message so the user knows the real
+    # reason instead of a generic "invalid auth".
+    return "server_error", msg or f"服务器返回错误码 {code}"
+
+
 async def _auth_with_password(
     hass: HomeAssistant,
     username: str,
     password: str,
-) -> dict[str, Any] | None:
+) -> dict[str, Any]:
     """Login with username/password and return account credentials.
 
-    Returns a dict with CONF_ACCESS_TOKEN / CONF_REFRESH_TOKEN / CONF_USER_ID,
-    or None if authentication failed.
+    On success returns a dict with CONF_ACCESS_TOKEN / CONF_REFRESH_TOKEN /
+    CONF_USER_ID.
+
+    On failure returns ``{"error": <error_key>, "message": <server_msg>}``
+    where ``error_key`` maps to a translation and ``message`` is the raw
+    server text for display via description_placeholders.
     """
     import uuid
 
@@ -68,17 +121,24 @@ async def _auth_with_password(
             data = resp.json()
         except Exception as e:
             _LOGGER.error("Login request error: %s", e)
-            return None
+            return {"error": "network_error", "message": str(e)}
 
-        if data.get("code") != "000":
-            _LOGGER.error("Login failed: code=%s, msg=%s", data.get("code"), data.get("message"))
-            return None
+        code = str(data.get("code", ""))
+        message = data.get("message", "")
+
+        if code != "000":
+            error_key, server_msg = _classify_login_error(code, message)
+            _LOGGER.error(
+                "Login failed: code=%s, msg=%s → mapped to %s",
+                code, message, error_key,
+            )
+            return {"error": error_key, "message": server_msg}
 
         d = data.get("data", {})
         user_id = d.get("userId") or d.get("userid")
         if not user_id:
             _LOGGER.error("No userId in login response: %s", d)
-            return None
+            return {"error": "server_error", "message": "登录响应缺少 userId"}
 
         token_type = d.get("tokenType", "bearer").strip()
         access_token = f"{token_type} {d.get('accessToken')}"
@@ -175,13 +235,18 @@ class HotataAirerConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Step 1: authenticate with username/password."""
         errors: dict[str, str] = {}
+        placeholders: dict[str, str] | None = None
 
         if user_input is not None:
             creds = await _auth_with_password(
                 self.hass, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
             )
-            if creds is None:
-                errors["base"] = "invalid_auth"
+            if "error" in creds:
+                errors["base"] = creds["error"]
+                # Surface the raw server message for non-standard errors so
+                # the user knows the real reason instead of a generic label.
+                if creds["error"] in ("server_error", "network_error"):
+                    placeholders = {"server_message": creds.get("message", "")}
             else:
                 devices = await _get_device_list(
                     self.hass, creds[CONF_ACCESS_TOKEN], creds[CONF_USER_ID]
@@ -225,6 +290,7 @@ class HotataAirerConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=schema,
             errors=errors,
+            description_placeholders=placeholders,
         )
 
     async def async_step_reconfigure(
@@ -238,13 +304,16 @@ class HotataAirerConfigFlow(ConfigFlow, domain=DOMAIN):
         """
         entry = self._get_reconfigure_entry()
         errors: dict[str, str] = {}
+        placeholders: dict[str, str] | None = None
 
         if user_input is not None:
             creds = await _auth_with_password(
                 self.hass, user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
             )
-            if creds is None:
-                errors["base"] = "invalid_auth"
+            if "error" in creds:
+                errors["base"] = creds["error"]
+                if creds["error"] in ("server_error", "network_error"):
+                    placeholders = {"server_message": creds.get("message", "")}
             else:
                 fetched = await _get_device_list(
                     self.hass, creds[CONF_ACCESS_TOKEN], creds[CONF_USER_ID]
@@ -278,4 +347,5 @@ class HotataAirerConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="reconfigure",
             data_schema=schema,
             errors=errors,
+            description_placeholders=placeholders,
         )

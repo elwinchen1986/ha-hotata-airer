@@ -36,7 +36,6 @@ from .const import (
     API_PROPERTY_SET,
     API_REFRESH_TOKEN,
     APP_KEY,
-    APP_SECRET,
     APP_VERSION,
     CONF_ACCESS_TOKEN,
     CONF_DESCENT_TIME,
@@ -59,7 +58,10 @@ from .util import build_login_body, encrypt_password, generate_sign
 _LOGGER = logging.getLogger(__name__)
 
 
-def build_base_payload(user_id: str, iot_id: str | None = None) -> dict[str, Any]:
+def build_base_payload(
+    user_id: str,
+    iot_id: str | None = None,
+) -> dict[str, Any]:
     """Build common payload fields."""
     ts = int(time.time() * 1000)
     payload: dict[str, Any] = {
@@ -124,6 +126,7 @@ class HotataAccount:
         self._refresh_token: str = entry.data.get(CONF_REFRESH_TOKEN, "")
         self._username: str = entry.data.get(CONF_USERNAME, "")
         self._password: str = entry.data.get(CONF_PASSWORD, "")
+
         self._expire_at: float = 0
 
         self._token_expired: bool = False
@@ -360,7 +363,7 @@ class HotataAccount:
         try:
             from .config_flow import _get_device_list, _merge_devices
             fetched = await _get_device_list(
-                self.hass, self._access_token, self.user_id
+                self.hass, self._access_token, self.user_id,
             )
         except Exception as err:
             _LOGGER.warning("Device list fetch failed during discovery: %s", err)
