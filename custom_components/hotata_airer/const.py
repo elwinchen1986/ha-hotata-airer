@@ -18,11 +18,13 @@ IMEI = "Windows Unknown x64_w4.1.10.53_s3.16.1"
 PHONE_MODEL = "microsoft"
 SYS_VERSION = "Windows Unknown x64"
 
-# App login parameters (from APK reverse engineering)
+# App login parameters (AES key, IV, and RSA private key for login signing).
+# Obtained from third-party reverse engineering work of the Hotata App;
+# not extracted by this project's authors.
 APP_VERSION_APP = "3.5.8"
 AES_KEY = b"SnqUuPDWy5wusGG7"
 AES_IV = b"tvGjXli9WjpfOmNK"
-# RSA private key embedded in the app (DER, base64-encoded)
+# RSA private key (DER, base64-encoded) — source: third-party RE work
 ACCOUNT_PRIVATE_KEY = (
     "MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCXAsmTBgCKxOZ3"
     "okMNkjw9h6X2BD5CJ8sQhNBGBoTEUf3USNbnLiN9gpYLCziK50M5BsOAIADqxbsN"
