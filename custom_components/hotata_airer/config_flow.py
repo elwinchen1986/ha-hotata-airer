@@ -243,10 +243,10 @@ class HotataAirerConfigFlow(ConfigFlow, domain=DOMAIN):
             )
             if "error" in creds:
                 errors["base"] = creds["error"]
-                # Surface the raw server message for non-standard errors so
-                # the user knows the real reason instead of a generic label.
-                if creds["error"] in ("server_error", "network_error"):
-                    placeholders = {"server_message": creds.get("message", "")}
+                # Always surface the raw server message so the user sees the
+                # real reason (e.g. "密码错误，剩余尝试次数 2 次") instead of
+                # only a generic translated label.
+                placeholders = {"server_message": creds.get("message", "")}
             else:
                 devices = await _get_device_list(
                     self.hass, creds[CONF_ACCESS_TOKEN], creds[CONF_USER_ID]
@@ -312,8 +312,7 @@ class HotataAirerConfigFlow(ConfigFlow, domain=DOMAIN):
             )
             if "error" in creds:
                 errors["base"] = creds["error"]
-                if creds["error"] in ("server_error", "network_error"):
-                    placeholders = {"server_message": creds.get("message", "")}
+                placeholders = {"server_message": creds.get("message", "")}
             else:
                 fetched = await _get_device_list(
                     self.hass, creds[CONF_ACCESS_TOKEN], creds[CONF_USER_ID]

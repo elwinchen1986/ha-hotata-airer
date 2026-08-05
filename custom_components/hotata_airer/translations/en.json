@@ -22,13 +22,13 @@
       }
     },
     "error": {
-      "invalid_auth": "Invalid username or password. Please check and try again.",
+      "invalid_auth": "Invalid username or password. Server response: {server_message}",
       "no_devices": "No airer devices were found under this account.",
-      "phone_not_registered": "This phone number is not registered with Hotata. Make sure you enter the phone number used to register in the Hotata app (WeChat users must bind a phone number and set a password in the app first).",
-      "captcha_required": "Login too frequent — captcha required. Please log in once via the Hotata app, then retry.",
-      "account_locked": "Account is locked or frozen. Contact Hotata support or try again later.",
-      "rate_limited": "Too many requests. Please try again later.",
-      "auth_expired": "Login has expired. Please log in again.",
+      "phone_not_registered": "This phone number is not registered with Hotata. Make sure you enter the phone number used to register in the Hotata app (WeChat users must bind a phone number and set a password in the app first). Server response: {server_message}",
+      "captcha_required": "Login too frequent — captcha required. Please log in once via the Hotata app, then retry. Server response: {server_message}",
+      "account_locked": "Account is locked or frozen. Contact Hotata support or try again later. Server response: {server_message}",
+      "rate_limited": "Too many requests. Please try again later. Server response: {server_message}",
+      "auth_expired": "Login has expired. Please log in again. Server response: {server_message}",
       "server_error": "Server returned an error: {server_message}",
       "network_error": "Network connection failed: {server_message}"
     },

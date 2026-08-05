@@ -22,13 +22,13 @@
       }
     },
     "error": {
-      "invalid_auth": "用户名或密码错误，请检查后重试。",
+      "invalid_auth": "用户名或密码错误，请检查后重试。服务器返回：{server_message}",
       "no_devices": "该账号下未发现任何晾衣机设备。",
-      "phone_not_registered": "该手机号尚未注册好太太智联。请确认输入的是好太太智联 App 中注册使用的手机号（微信登录的用户需先在 App 中绑定手机号并设置密码）。",
-      "captcha_required": "登录过于频繁，服务器要求验证码。请先在好太太智联 App 中登录一次，再回来重试。",
-      "account_locked": "账号已被锁定或冻结，请联系好太太客服或稍后再试。",
-      "rate_limited": "操作过于频繁，请稍后再试。",
-      "auth_expired": "登录已过期，请重新登录。",
+      "phone_not_registered": "该手机号尚未注册好太太智联。请确认输入的是好太太智联 App 中注册使用的手机号（微信登录的用户需先在 App 中绑定手机号并设置密码）。服务器返回：{server_message}",
+      "captcha_required": "登录过于频繁，服务器要求验证码。请先在好太太智联 App 中登录一次，再回来重试。服务器返回：{server_message}",
+      "account_locked": "账号已被锁定或冻结，请联系好太太客服或稍后再试。服务器返回：{server_message}",
+      "rate_limited": "操作过于频繁，请稍后再试。服务器返回：{server_message}",
+      "auth_expired": "登录已过期，请重新登录。服务器返回：{server_message}",
       "server_error": "服务器返回错误：{server_message}",
       "network_error": "网络连接失败：{server_message}"
     },
